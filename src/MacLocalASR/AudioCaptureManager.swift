@@ -10,12 +10,25 @@ final class AudioCaptureManager: @unchecked Sendable {
 
     private let engine = AVAudioEngine()
     private let captureQueue = DispatchQueue(label: "MacLocalASR.AudioCapture")
+    private let stateLock = NSLock()
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
     private var pcmData = Data()
     private var maximumDurationTask: Task<Void, Never>?
     private var deviceObserver: NSObjectProtocol?
-    private var isRecording = false
+    private var _isRecording = false
+
+    private var isRecording: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _isRecording
+    }
+
+    private func setRecording(_ value: Bool) {
+        stateLock.lock()
+        _isRecording = value
+        stateLock.unlock()
+    }
 
     deinit {
         removeDeviceListener()
@@ -37,15 +50,17 @@ final class AudioCaptureManager: @unchecked Sendable {
             sampleRate: Self.sampleRate,
             channels: 1,
             interleaved: true
-        ), let converter = AVAudioConverter(from: inputFormat, to: destinationFormat) else {
+        ), let newConverter = AVAudioConverter(from: inputFormat, to: destinationFormat) else {
             throw AudioCaptureError.converterUnavailable
         }
 
         captureQueue.sync {
             pcmData.removeAll(keepingCapacity: true)
         }
-        self.converter = converter
+        stateLock.lock()
+        converter = newConverter
         outputFormat = destinationFormat
+        stateLock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
             self?.convertAndAppend(buffer)
@@ -54,7 +69,7 @@ final class AudioCaptureManager: @unchecked Sendable {
         do {
             engine.prepare()
             try engine.start()
-            isRecording = true
+            setRecording(true)
             installDeviceListener()
             maximumDurationTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(Self.maximumDuration))
@@ -94,13 +109,19 @@ final class AudioCaptureManager: @unchecked Sendable {
         maximumDurationTask = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        stateLock.lock()
         converter = nil
         outputFormat = nil
-        isRecording = false
+        stateLock.unlock()
+        setRecording(false)
     }
 
     private func convertAndAppend(_ inputBuffer: AVAudioPCMBuffer) {
-        guard let converter, let outputFormat else { return }
+        stateLock.lock()
+        let activeConverter = converter
+        let activeFormat = outputFormat
+        stateLock.unlock()
+        guard let converter = activeConverter, let outputFormat = activeFormat else { return }
 
         let ratio = outputFormat.sampleRate / inputBuffer.format.sampleRate
         let capacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio)) + 1

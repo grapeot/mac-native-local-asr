@@ -11,10 +11,12 @@
 - Identified qwen3-asr-mlx-runtime as the ASR backend (subprocess, not in-process MLX)
 - Decided against reusing VoiceFlowKit (cloud-transport design incompatible with local-only app)
 - GPT implemented core app: 13 Swift files, Python bridge script, String Catalog, Package.swift
-- Main thread review found 3 issues:
-  1. Python bridge assumed non-existent internal API of qwen3-asr-mlx-runtime → rewrote to use mlx-qwen3-asr package directly (same package user already has in life_record)
-  2. TextOutputManager popped Accessibility prompt on every transcription → moved to one-time prompt at app startup
-  3. MenuView used Environment(\.openSettings) which is unreliable in MenuBarExtra(.menu) → switched to NSApp.sendAction showSettingsWindow:
+- GPT self-review found 5 issues; main thread fixed 3 most important:
+  1. Python bridge: model now loads on "start" before returning "ready" (was returning ready before loading)
+  2. AudioCaptureManager: added NSLock to protect converter/outputFormat/isRecording from cross-thread races
+  3. TextOutputManager: record frontmost app at recording start, only auto-paste if same app is frontmost when transcription completes
+- Issue 4 (app bundle identity for stable TCC) marked as known limitation — SwiftPM executable works but TCC grants may reset on rebuild; Phase 2 will create proper .app bundle
+- Issue 3 (bridge crash vs AppState readiness sync) partially addressed; full fix needs callback from ASRBridgeClient to AppState — deferred to next iteration
 
 ## Lessons Learned
 

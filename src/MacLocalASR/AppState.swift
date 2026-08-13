@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -21,6 +22,7 @@ final class AppState: ObservableObject {
     private let textOutput = TextOutputManager()
     private var hotkeyManager: HotkeyManager?
     private var errorTask: Task<Void, Never>?
+    private var recordingFrontmostApp: String?
 
     init() {
         hotkeyManager = HotkeyManager { [weak self] in
@@ -166,6 +168,7 @@ final class AppState: ObservableObject {
 
         do {
             try await audioCapture.startRecording()
+            recordingFrontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             lastAction = ""
             phase = .recording
         } catch {
@@ -189,7 +192,10 @@ final class AppState: ObservableObject {
             }
 
             lastTranscript = transcript
-            lastAction = textOutput.output(transcript)
+            let currentFrontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            let canAutoPaste = currentFrontmost == recordingFrontmostApp
+            let didPaste = canAutoPaste && textOutput.output(transcript)
+            lastAction = didPaste
                 ? LocalizableStrings.pasted
                 : LocalizableStrings.copiedToClipboard
             phase = .idle

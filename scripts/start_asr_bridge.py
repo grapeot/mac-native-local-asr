@@ -15,6 +15,7 @@ Protocol (newline-delimited JSON over stdin/stdout):
         {"type": "stopped"}
 
 Stderr is for diagnostics only — never mixed into the JSONL stream.
+The model is loaded on "start" and stays resident for the process lifetime.
 """
 
 from __future__ import annotations
@@ -60,8 +61,22 @@ def main() -> int:
         )
         return 2
 
-    # Signal ready — model loads lazily on first transcribe call
-    print(json.dumps({"type": "ready"}), flush=True)
+    model_loaded = {"value": False}
+
+    def ensure_model_loaded() -> str | None:
+        if model_loaded["value"]:
+            return None
+        try:
+            import mlx_qwen3_asr._model as _model
+
+            if args.local_files_only:
+                _model.load_model(args.model, local_files_only=True)
+            else:
+                _model.load_model(args.model)
+            model_loaded["value"] = True
+            return None
+        except Exception as error:
+            return str(error)
 
     for line in sys.stdin:
         line = line.strip()
@@ -80,7 +95,15 @@ def main() -> int:
         msg_type = request.get("type")
 
         if msg_type == "start":
-            # Already signaled ready above; acknowledge
+            error = ensure_model_loaded()
+            if error:
+                print(
+                    json.dumps(
+                        {"type": "error", "message": f"Model load failed: {error}"}
+                    ),
+                    flush=True,
+                )
+                return 2
             print(json.dumps({"type": "ready"}), flush=True)
 
         elif msg_type == "transcribe":
