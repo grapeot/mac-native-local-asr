@@ -7,151 +7,140 @@
 │              Menu Bar App (SwiftUI)                │
 │                                                   │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────┐  │
-│  │ Global   │    │ AVAudio-    │    │ VAD      │  │
-│  │ Hotkey   │───▶│ Engine      │───▶│ (energy  │  │
-│  │          │    │ (24kHz mono)│    │  based)  │  │
+│  │ Global   │    │ AVAudio-    │    │ WAV      │  │
+│  │ Hotkey   │───▶│ Engine      │───▶│ file     │  │
+│  │ (toggle) │    │ → 24kHz     │    │ (temp)   │  │
 │  └──────────┘    └──────────────┘    └────┬─────┘  │
 │                                            │       │
-│                            ┌───────────────▼────┐ │
-│                            │ ASR Bridge Client  │ │
-│                            │ (JSONL subprocess) │ │
-│                            │ ┌────────────────┐ │ │
-│                            │ │ qwen3-asr-mlx-  │ │ │
-│                            │ │ runtime process │ │ │
-│                            │ │ (model resident) │ │ │
-│                            │ └────────────────┘ │ │
-│                            └───────┬────────────┘ │
-│                                    │              │
-│                    ┌───────────────▼────────────┐ │
-│                    │ Text Output                │ │
-│                    │ ├─ Paste to clipboard      │ │
-│                    │ └─ Simulate keystroke       │ │
-│                    │    (CGEvent key events)     │ │
-│                    └────────────────────────────┘ │
-│                                                   │
-│  Optional: ┌────────────────────────────────────┐ │
-│            │ LLM Post-Processing                 │ │
-│            │ (Ollama/LM Studio localhost API)    │ │
-│            │ → punctuation, formatting, cleanup  │ │
-│            └────────────────────────────────────┘ │
+│                            ┌───────────────▼────┐  │
+│                            │ ASR Bridge Client  │  │
+│                            │ (JSONL subprocess) │  │
+│                            │ ┌────────────────┐ │  │
+│                            │ │ qwen3-asr-mlx-  │ │  │
+│                            │ │ runtime process │ │  │
+│                            │ │ (model resident)│ │  │
+│                            │ └────────────────┘ │  │
+│                            └───────┬────────────┘  │
+│                                    │               │
+│                    ┌───────────────▼─────────────┐ │
+│                    │ Text Output                 │ │
+│                    │ 1. Write to NSPasteboard    │ │
+│                    │ 2. Simulate ⌘V keystroke     │ │
+│                    │    (if Accessibility granted)│ │
+│                    │ Fallback: "Copied" status   │ │
+│                    └─────────────────────────────┘ │
 └──────────────────────────────────────────────────┘
 ```
+
+## State Machine
+
+The app has exactly one state at a time:
+
+```
+loading → idle → recording → processing → idle
+                ↑                          │
+                └────── error (back to idle, show message) ──┘
+```
+
+- **loading**: model starting, ASR bridge initializing
+- **idle**: ready to record, menu bar icon gray
+- **recording**: hotkey pressed, audio capturing, menu bar icon red
+- **processing**: hotkey pressed again, audio sent to ASR, menu bar icon yellow
+- **error**: transient state, shows error message, returns to idle
+
+Hotkey behavior is deterministic:
+- In `idle` → starts recording
+- In `recording` → stops recording, starts processing
+- In `processing` or `loading` → ignored (no-op)
 
 ## Component Contracts
 
 ### 1. MenuBarExtra (UI)
 
-SwiftUI `MenuBarExtra` with `systemTray` style. Icon is a simple SF Symbol that changes:
-- Idle: `mic.fill` (gray)
-- Recording: `mic.fill` (red, pulsing animation)
-- Processing: `mic.fill` (yellow)
+SwiftUI `MenuBarExtra` with `.menu` style (not `.window` — simpler, native, no window management). Icon is an SF Symbol that changes per state:
 
-Click opens a small dropdown with:
-- Status text (current state)
-- Last transcription (truncated, tap to copy)
-- Settings link (opens settings window)
-- Quit button
+- Idle: `waveform.circle` (gray, template image)
+- Recording: `waveform.circle.fill` (red, via tinted template image)
+- Processing: `waveform.circle.badge.ellipsis` (yellow)
+- Error: `exclamationmark.circle` (red)
+
+Dropdown menu contents:
+- Status text (current state + last action result)
+- Last transcription (truncated to 2 lines, click to copy)
+- Separator
+- Settings… (opens a small settings window)
+- Quit
 
 ### 2. GlobalHotkeyManager
 
-Uses the `KeyboardShortcuts` SPM package (simpler and more reliable than raw CGEvent tap). Default: ⌘⇧Space. User-configurable in Settings.
+Uses the `KeyboardShortcuts` SPM package. Default: ⌘⇧Space. User-configurable in Settings.
 
-Two modes:
-- **Push-to-talk**: hold hotkey to record, release to stop
-- **Toggle**: press to start, press again to stop (better for long dictation)
-
-Default mode: toggle. Configurable in Settings.
+**Toggle mode only.** Press to start recording, press again to stop and process. No push-to-talk, no VAD. The two hotkey presses define the exact recording boundary.
 
 ### 3. AudioCaptureManager
 
 `AVAudioEngine` with `installTap(onBus:0, bufferSize:4096, format:)`.
 
-- Input: default input device (user can change in System Settings)
-- Format: PCM 16-bit, 24kHz, mono (matches Qwen3-ASR input)
-- Output: `Data` chunks fed to VAD
+- Input: default input device (user changes via System Settings)
+- Input format: whatever the device provides (commonly 44.1/48kHz, Float32, stereo or mono)
+- Conversion: `AVAudioConverter` to transform to 24kHz, Int16, mono PCM
+- Output: accumulated PCM buffer in memory, written to temp WAV file on stop
+- Max recording duration: 60 seconds (dictation tool, not transcription app)
+- Device change handling: `AVAudioEngine` notification for device removal → cancel recording, show error
 
-No `AVAudioSession` (that's iOS). macOS uses device selection via `AVAudioEngine.inputNode`.
+Temp WAV file location: `NSTemporaryDirectory()`. Deleted after transcription completes or on app quit.
 
-### 4. VAD (Voice Activity Detection)
-
-**Phase 1 (MVP)**: Energy-based VAD. Simple RMS threshold + silence duration detection.
-- Speech threshold: RMS > -45dB
-- Silence threshold: RMS < -50dB for > 1.5 seconds → end of utterance
-- Minimum utterance length: 0.3 seconds (filter clicks/noise)
-
-**Phase 2 (future)**: Silero VAD via ONNX Runtime if energy-based is insufficient.
-
-VAD output: utterance audio segments (PCM Data chunks with timestamps).
-
-### 5. ASR Bridge Client
+### 4. ASR Bridge Client
 
 Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
 
-**Lifecycle**:
-1. App startup → `start` command (model loads, stays resident)
-2. VAD detects utterance → `audio_chunk` + `end_utterance`
-3. Receive `transcript` JSON response
-4. Repeat for each utterance
-5. App quit → `stop` command (clean shutdown)
+**Startup** (at app launch):
+1. Launch `python3 scripts/qwen3-asr-mlx-bridge` with `--model Qwen/Qwen3-ASR-1.7B --local-files-only`
+2. Send `{"type":"start"}` → wait for `{"type":"ready"}` (timeout: 30s for model load)
+3. State → `idle`
 
-**Protocol** (newline-delimited JSON over stdin/stdout):
+**Transcription** (per utterance):
+1. Send `{"type":"transcribe","audio_path":"/tmp/xxx.wav"}`
+2. Receive `{"type":"transcript","text":"..."}`
+3. State → `idle`
 
-```jsonl
-// App → Runtime
-{"type":"start"}
-{"type":"audio_chunk","audio":"<base64-wav>","sample_rate":24000}
-{"type":"end_utterance"}
-{"type":"stop"}
+**Shutdown** (on app quit):
+1. Send `{"type":"stop"}`
+2. Terminate process after 2s if no response
 
-// Runtime → App
-{"type":"ready"}
-{"type":"transcript","text":"你好世界","segments":[...]}
-{"type":"error","message":"..."}
-```
+**Error handling**:
+- Subprocess crash: bounded restart (max 3 attempts, exponential backoff). Discard in-flight utterance. User must press hotkey again after recovery.
+- Model load failure: show error in menu bar, do not retry automatically.
+- Transcript timeout (>15s): show timeout error, kill and restart bridge.
+- stdout is for JSONL only. stderr is drained to a bounded in-memory diagnostic buffer (last 50 lines). Any non-JSON line on stdout is skipped, not fatal.
 
-**Error handling**: if subprocess crashes, restart it. If model fails to load, show error in menu bar. If transcript times out (>10s), show timeout error.
+**Bridge script**: this repo owns a thin launch script at `scripts/start_asr_bridge.py` that imports `qwen3-asr-mlx-runtime` and exposes the JSONL protocol. The external runtime must be installed by the user; this script is the adapter layer.
 
-### 6. TextOutputManager
+**Versioning**: the app records the tested runtime commit hash and Python version in Settings. At startup, it logs a warning if the installed runtime doesn't match, but does not hard-block.
 
-Two output modes (configurable in Settings):
+### 5. TextOutputManager
 
-**Mode A: Clipboard** (default, safest)
-- Write transcript to `NSPasteboard.general`
-- User pastes manually with ⌘V
+Single output path, no mode switching:
 
-**Mode B: Keystroke simulation** (default for push-to-talk)
-- Use `CGEvent` to simulate typing each character
-- Works in any text field that accepts keyboard input
-- Requires Accessibility permission
+1. Write transcript to `NSPasteboard.general.clearContents()` + `setString(transcript)`
+2. If Accessibility permission granted: simulate ⌘V via `CGEvent(keyCode:kVK_ANSI_V, flags:.commandDown)`
+3. If Accessibility not granted or paste fails: show "Copied to clipboard" in menu bar
 
-### 7. LLMPostProcessor (optional)
+This is one `NSPasteboard` write + one key event. No per-character typing. No Unicode fragility.
 
-If enabled in Settings, sends raw ASR text to a local LLM endpoint:
+**Permission handling**: 
+- Microphone: required. App requests on first recording. If denied, show error.
+- Accessibility: optional. If granted, auto-paste works. If not, clipboard-only with manual paste.
 
-```
-POST http://localhost:11434/v1/chat/completions
-{
-  "model": "qwen2.5:3b",
-  "messages": [
-    {"role": "system", "content": "Clean up ASR output: fix punctuation, remove filler words, format as readable text. Preserve the original language (Chinese/English/mixed). Output only the cleaned text."},
-    {"role": "user", "content": "<raw ASR text>"}
-  ]
-}
-```
+### 6. SettingsStore
 
-Adds ~0.5-1s latency. User can disable for speed.
+Persisted via `@AppStorage` (UserDefaults):
 
-### 8. SettingsStore
+- `hotkey` — global hotkey combo (default: ⌘⇧Space)
+- `asrRuntimePath` — path to `start_asr_bridge.py` script
+- `asrModelPath` — local path to model directory (must exist, no implicit download)
 
-Persisted via `UserDefaults` (or `@AppStorage`):
-- `hotkey` — global hotkey key combo
-- `asrRuntimePath` — path to qwen3-asr-mlx-bridge script
-- `asrModel` — HuggingFace model ID (default: `Qwen/Qwen3-ASR-1.7B`)
-- `outputMode` — "clipboard" or "keystroke"
-- `recordingMode` — "toggle" or "push-to-talk"
-- `llmEnabled` — bool
-- `llmEndpoint` — URL string (default: `http://localhost:11434/v1`)
-- `llmModel` — model name (default: `qwen2.5:3b`)
+Three settings. That's it. No LLM settings, no output mode, no recording mode.
 
 ## Key Design Decisions
 
@@ -159,22 +148,37 @@ Persisted via `UserDefaults` (or `@AppStorage`):
 
 The `qwen3-asr-mlx-runtime` is a Python project. Bridging Python+MLX into Swift directly requires PyObjC or a C bridge, both fragile. A subprocess with JSONL protocol is clean, debuggable, and lets the Python runtime own its memory lifecycle. The model loads once and stays resident — subprocess startup cost is paid once at app launch.
 
-### Why energy-based VAD for MVP?
+### Why no VAD?
 
-Silero VAD adds an ONNX Runtime dependency and model download. Energy-based VAD is ~30 lines of Swift and works well for close-mic dictation (the user is speaking directly into their Mac). We can upgrade to Silero if field testing shows insufficient accuracy.
+VAD adds complexity (thresholds, silence detection, calibration across devices) and failure modes (aircraft noise, room acoustics) that don't exist when the user explicitly presses a hotkey to start and stop. Toggle mode makes the recording boundary deterministic. VAD can be added later if users want auto-segmented continuous dictation.
+
+### Why clipboard + ⌘V, not per-character CGEvent?
+
+Per-character `CGEvent` typing is fragile for Unicode text (Chinese characters, emoji, mixed scripts). Some apps (Terminal, Electron, secure fields) don't reliably accept simulated Unicode keystrokes. Writing to `NSPasteboard` and simulating one ⌘V is universal — every macOS text field that accepts paste will work. If Accessibility is unavailable, the user still has the text in clipboard for manual paste.
 
 ### Why not VoiceFlowKit?
 
-VoiceFlowKit is designed for cloud WebSocket ASR. Its `VoiceFlowMicrophone` is `#if os(iOS) || os(visionOS)` — unavailable on macOS. Its session/ticket/recovery model is cloud-transport-specific. Adding a "local strategy" would pollute the clean cloud design. This app shares zero code with VoiceFlowKit by design.
+VoiceFlowKit is designed for cloud WebSocket ASR. Its `VoiceFlowMicrophone` is `#if os(iOS) || os(visionOS)` — unavailable on macOS. Its session/ticket/recovery model is cloud-transport-specific. This app shares zero code with VoiceFlowKit by design.
 
 ### Why KeyboardShortcuts SPM package?
 
-Raw `CGEvent` tap for global hotkeys requires complex Carbon-era `RegisterEventHotKey` calls and is error-prone. `KeyboardShortcuts` by Sindre Sorhus is well-maintained, handles permission prompts, and provides a clean SwiftUI integration. It's MIT licensed.
+Raw `CGEvent` tap for global hotkeys requires complex Carbon-era `RegisterEventHotKey` calls and is error-prone. `KeyboardShortcuts` by Sindre Sorhus is well-maintained, handles permission prompts, and provides a clean SwiftUI integration. MIT licensed.
+
+### Why no LLM post-processing in MVP?
+
+LLM post-processing adds a dependency on another user-managed service (Ollama/LM Studio), more failure modes, and 0.5-1s latency. The ASR output from Qwen3-ASR-1.7B already includes punctuation. If post-processing is needed, it can be added as a Phase 2 feature without changing the core architecture.
 
 ## Dependencies
 
-- **KeyboardShortcuts** (SPM) — global hotkey registration. MIT.
-- **qwen3-asr-mlx-runtime** (external) — user-installed, not bundled. Apache-2.0.
-- **Ollama or LM Studio** (optional, external) — LLM post-processing. User-installed.
+- **KeyboardShortcuts** (SPM, MIT) — global hotkey registration
+- **qwen3-asr-mlx-runtime** (external, user-installed, Apache-2.0) — ASR backend
 
-No other SPM dependencies. Keep the dependency surface minimal for a public repo.
+No other dependencies. No Ollama, no LM Studio, no ONNX Runtime in the MVP.
+
+## Future (Phase 2, not in MVP)
+
+- LLM post-processing via local Ollama endpoint
+- Silero VAD for auto-segmented continuous dictation
+- Recording history (last N transcripts viewable in menu dropdown)
+- Model selection (0.6B vs 1.7B)
+- Notarized Developer ID distribution

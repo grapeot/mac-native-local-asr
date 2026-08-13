@@ -48,18 +48,20 @@ open build/Debug/MacLocalASR.app
 
 ## Key Architecture Decisions
 
-1. **Menu bar app, not window app** — `MenuBarExtra` in SwiftUI. No dock icon, no main window.
-2. **Global hotkey** — `CGEvent` tap or `KeyboardShortcuts` SPM package for system-wide key capture.
-3. **AVAudioEngine** — macOS-native audio capture, not AVAudioSession (iOS pattern).
-4. **qwen3-asr-mlx-runtime as subprocess** — JSONL bridge protocol over stdin/stdout. Model stays resident.
-5. **Text output** — `NSPasteboard` for clipboard, `CGEvent` key events for cursor insertion.
-6. **Optional LLM post-processing** — Ollama or LM Studio local API, not bundled.
+1. **Menu bar app, not window app** — `MenuBarExtra` with `.menu` style in SwiftUI. No dock icon.
+2. **Toggle hotkey only** — press to start recording, press again to stop. No VAD, no push-to-talk.
+3. **AVAudioEngine + AVAudioConverter** — macOS-native audio capture with explicit conversion to 24kHz Int16 mono.
+4. **qwen3-asr-mlx-runtime as subprocess** — JSONL protocol, model stays resident, single WAV file per utterance.
+5. **Clipboard + ⌘V for text output** — write to NSPasteboard, simulate one paste keystroke. No per-character typing.
+6. **No LLM post-processing in MVP** — Qwen3-ASR-1.7B includes punctuation. LLM cleanup is Phase 2.
 
 ## What NOT to do
 
 - Do not add cloud dependencies. The entire point is offline operation.
-- Do not add WebSocket, ticket flow, or cloud session management — this is not VoiceFlowKit.
-- Do not over-engineer settings. Three settings max: hotkey, model path, LLM toggle.
+- Do not add VAD, push-to-talk, or auto-segmentation in the MVP.
+- Do not add LLM post-processing in the MVP.
+- Do not add per-character CGEvent typing for text output.
+- Do not over-engineer settings. Three settings: hotkey, runtime path, model path.
 - Do not add speaker diarization. Single-user dictation tool.
 - Do not create a complex window-based UI. Menu bar + simple dropdown only.
 
