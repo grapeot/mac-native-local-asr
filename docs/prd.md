@@ -34,7 +34,7 @@ Power users who want voice dictation on macOS without depending on cloud service
 - [ ] Works with Wi-Fi turned off (verified by disabling network)
 - [ ] Model loads once at app startup and stays resident for the session
 - [ ] Quitting the app releases the model and frees memory
-- [ ] Settings panel with: hotkey customization, model path, LLM post-processing toggle
+- [ ] Settings panel with: hotkey customization, ASR bridge path, model path
 - [ ] Bilingual UI (English/Chinese) following system locale
 
 ## Constraints

@@ -10,6 +10,9 @@
 - Revised RFC: simplified to 6 components (from 8), removed VAD, removed push-to-talk, removed LLM post-processing, changed text output to clipboard+⌘V, added explicit audio format conversion, added state machine, reduced settings to 3 items
 - Identified qwen3-asr-mlx-runtime as the ASR backend (subprocess, not in-process MLX)
 - Decided against reusing VoiceFlowKit (cloud-transport design incompatible with local-only app)
+- Implemented the macOS 14+ Swift package with menu bar lifecycle, deterministic state machine, configurable global hotkey, 24 kHz Int16 mono WAV capture, resident JSONL ASR subprocess, and clipboard plus Command-V output
+- Added the Python bridge adapter, bilingual English/Simplified Chinese String Catalog, Info.plist privacy metadata, and three-control settings panel
+- Verified `swift build --package-path src` succeeds with Swift 6.3.3 and Xcode 26.6
 
 ## Lessons Learned
 

@@ -12,8 +12,8 @@ A macOS menu bar app for offline voice-to-text using local MLX speech recognitio
 
 ## Structure
 
-- `src/` — Xcode project and Swift sources
-  - `src/MacLocalASR.xcodeproj` — Xcode project
+- `src/` — Swift package and app sources
+  - `src/Package.swift` — package manifest, openable directly in Xcode
   - `src/MacLocalASR/` — App sources (Swift)
 - `docs/` — Product and engineering docs
   - `prd.md` — product scope, user goals, success criteria
@@ -36,14 +36,13 @@ A macOS menu bar app for offline voice-to-text using local MLX speech recognitio
 ## Build & Test
 
 ```bash
-# Build
-xcodebuild -project src/MacLocalASR.xcodeproj -scheme MacLocalASR -configuration Debug build
+# Build from the repository root
+swift build --package-path src
 
-# Unit tests
-xcodebuild -project src/MacLocalASR.xcodeproj -scheme MacLocalASR test
+# Run from the repository root
+swift run --package-path src MacLocalASR
 
-# Run app
-open build/Debug/MacLocalASR.app
+# Or open src/Package.swift in Xcode and run the MacLocalASR scheme
 ```
 
 ## Key Architecture Decisions

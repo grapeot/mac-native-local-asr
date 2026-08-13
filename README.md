@@ -6,10 +6,9 @@ A macOS menu bar app for offline voice-to-text using local MLX-accelerated speec
 
 - Lives in the menu bar — no window, no dock icon
 - Global hotkey (default: ⌘⇧Space) to toggle recording
-- Audio captured via AVAudioEngine, segmented by VAD
+- Audio captured via AVAudioEngine and converted to 24 kHz mono PCM
 - Transcribed locally by Qwen3-ASR-1.7B through MLX
-- Text inserted at cursor position or copied to clipboard
-- Optional LLM post-processing (punctuation, formatting) via Ollama or LM Studio
+- Text pasted at the cursor, with clipboard-only fallback
 - 100% offline — no network calls, no cloud APIs
 
 ## Requirements
@@ -17,7 +16,6 @@ A macOS menu bar app for offline voice-to-text using local MLX-accelerated speec
 - macOS 14.0+ (Sonoma)
 - Apple Silicon Mac (M1 or later)
 - [qwen3-asr-mlx-runtime](https://github.com/drguptavivek/qwen3-asr-mlx-runtime) installed and model downloaded
-- (Optional) [Ollama](https://ollama.ai) or LM Studio for text post-processing
 
 ## Installation
 
@@ -25,50 +23,39 @@ A macOS menu bar app for offline voice-to-text using local MLX-accelerated speec
 
 ```bash
 git clone https://github.com/drguptavivek/qwen3-asr-mlx-runtime.git ~/qwen3-asr-mlx-runtime
-cd ~/qwen3-asr-mlx-runtime
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install "mlx==0.31.2" "mlx-lm==0.29.1" "transformers==4.57.6" "qwen-asr==0.0.6"
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -e ~/qwen3-asr-mlx-runtime
 ```
 
-### 2. Download model (automatic on first run)
+The app never downloads a model. Download Qwen3-ASR-1.7B while online and keep
+the resulting snapshot in a local directory.
 
-The app will trigger model download on first use, or you can pre-download:
+### 2. Build and run the app
 
-```bash
-# Inside the runtime venv
-python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-1.7B')"
-```
-
-### 3. Build and run the app
-
-Open `src/MacLocalASR.xcodeproj` in Xcode, build and run.
+Open `src/Package.swift` in Xcode and run the `MacLocalASR` executable scheme.
 
 Or from command line:
 
 ```bash
-xcodebuild -project src/MacLocalASR.xcodeproj -scheme MacLocalASR -configuration Release build
-open build/Release/MacLocalASR.app
+cd src
+swift run MacLocalASR
 ```
+
+### 3. Configure
+
+Open Settings from the menu bar and set:
+
+- ASR Bridge Path: this repository's `scripts/start_asr_bridge.py`
+- Model Path: the downloaded local model directory
+- Hotkey: defaults to ⌘⇧Space and can be changed in the recorder
 
 ### 4. Grant permissions
 
 On first launch, the app will request:
 - **Microphone access** (required for recording)
-- **Accessibility access** (required for global hotkey and text insertion at cursor)
+- **Accessibility access** (optional; required for automatic paste)
 
 Grant both in System Settings → Privacy & Security.
-
-## Configuration
-
-Copy `.env.example` to `~/.config/mac-local-asr/.env` and adjust paths:
-
-```bash
-mkdir -p ~/.config/mac-local-asr
-cp .env.example ~/.config/mac-local-asr/.env
-```
-
-Edit the file to point to your qwen3-asr-mlx-runtime installation.
 
 ## License
 

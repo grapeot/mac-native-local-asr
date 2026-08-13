@@ -95,7 +95,7 @@ Temp WAV file location: `NSTemporaryDirectory()`. Deleted after transcription co
 Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
 
 **Startup** (at app launch):
-1. Launch `python3 scripts/qwen3-asr-mlx-bridge` with `--model Qwen/Qwen3-ASR-1.7B --local-files-only`
+1. Launch the configured `start_asr_bridge.py` with `--model <local-model-path> --local-files-only`
 2. Send `{"type":"start"}` → wait for `{"type":"ready"}` (timeout: 30s for model load)
 3. State → `idle`
 
@@ -116,7 +116,7 @@ Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
 
 **Bridge script**: this repo owns a thin launch script at `scripts/start_asr_bridge.py` that imports `qwen3-asr-mlx-runtime` and exposes the JSONL protocol. The external runtime must be installed by the user; this script is the adapter layer.
 
-**Versioning**: the app records the tested runtime commit hash and Python version in Settings. At startup, it logs a warning if the installed runtime doesn't match, but does not hard-block.
+**Versioning**: the adapter targets `qwen3-asr-mlx-runtime` protocol `qwen3-asr-mlx-jsonl-v1`. Runtime installation and pinning remain user-managed and do not add a fourth setting.
 
 ### 5. TextOutputManager
 

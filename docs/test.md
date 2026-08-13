@@ -2,18 +2,17 @@
 
 ## Unit Tests
 
-Swift tests in the Xcode project test target (`MacLocalASRTests`).
+Unit tests should cover the deterministic component contracts without requiring model weights.
 
-- **VAD logic**: energy threshold, silence detection, minimum utterance length
 - **ASR bridge client**: JSONL protocol encoding/decoding, error handling, timeout
 - **Text output**: clipboard writing, keystroke event construction
 - **Settings**: UserDefaults persistence, default values
+- **Audio output**: WAV header and 24 kHz mono Int16 format
 
 ## Integration Tests
 
 - **Audio pipeline**: AVAudioEngine tap produces PCM chunks at expected format (24kHz mono 16-bit)
 - **ASR bridge**: start → transcribe sample audio → verify transcript returned (requires model installed — opt-in test)
-- **LLM post-processing**: send sample ASR text to Ollama endpoint, verify cleaned output (requires Ollama running — opt-in test)
 
 ## Manual Verification
 
@@ -28,8 +27,8 @@ The core user flow is verified manually:
 ## Build Verification
 
 ```bash
-xcodebuild -project src/MacLocalASR.xcodeproj -scheme MacLocalASR -configuration Debug build
-xcodebuild -project src/MacLocalASR.xcodeproj -scheme MacLocalASR test
+swift build --package-path src
+.venv/bin/python -m py_compile scripts/start_asr_bridge.py
 ```
 
-Both must pass with zero errors before any commit is considered complete.
+Both must pass with zero errors before any commit is considered complete. Full audio and ASR integration remain manual until a local model fixture is configured.
