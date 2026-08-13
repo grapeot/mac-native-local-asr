@@ -3,7 +3,6 @@ import SwiftUI
 
 struct MenuView: View {
     @ObservedObject var appState: AppState
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Label {
@@ -12,7 +11,7 @@ struct MenuView: View {
             Image(systemName: "circle.fill")
                 .foregroundStyle(appState.stateColor)
         }
-            .disabled(true)
+        .disabled(true)
 
         if !appState.lastTranscript.isEmpty {
             Button("\(LocalizableStrings.lastPrefix) \(appState.truncatedTranscript)") {
@@ -23,7 +22,9 @@ struct MenuView: View {
         Divider()
 
         Button(LocalizableStrings.settings) {
-            openSettings()
+            if #available(macOS 14, *) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
             NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut(",")

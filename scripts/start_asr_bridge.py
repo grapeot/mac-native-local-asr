@@ -1,42 +1,58 @@
 #!/usr/bin/env python3
-"""App-facing JSONL adapter for qwen3-asr-mlx-runtime."""
+"""Minimal JSONL bridge for Qwen3-ASR on Apple Silicon via mlx-qwen3-asr.
+
+Protocol (newline-delimited JSON over stdin/stdout):
+
+    App → Bridge:
+        {"type": "start"}
+        {"type": "transcribe", "audio_path": "/tmp/utterance.wav"}
+        {"type": "stop"}
+
+    Bridge → App:
+        {"type": "ready"}
+        {"type": "transcript", "text": "..."}
+        {"type": "error", "message": "..."}
+        {"type": "stopped"}
+
+Stderr is for diagnostics only — never mixed into the JSONL stream.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="Local Qwen3-ASR model directory")
-    parser.add_argument("--local-files-only", action="store_true")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="HuggingFace model ID or local path (e.g. Qwen/Qwen3-ASR-1.7B)",
+    )
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Prevent network downloads — model must already be cached locally",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    model_path = Path(args.model).expanduser().resolve()
-    if not model_path.is_dir():
-        print(json.dumps({"type": "error", "message": "Model directory was not found"}))
-        return 2
 
     try:
-        from qwen3_asr_mlx_runtime import runtime
-    except ImportError as error:
-        project_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
-        if project_python.is_file() and Path(sys.executable).resolve() != project_python.resolve():
-            os.execv(str(project_python), [str(project_python), __file__, *sys.argv[1:]])
+        from mlx_qwen3_asr import transcribe
+    except ImportError:
         print(
             json.dumps(
                 {
                     "type": "error",
                     "message": (
-                        "qwen3-asr-mlx-runtime is not installed in this Python "
-                        f"environment: {error}"
+                        "mlx-qwen3-asr is not installed. "
+                        "Install with: pip install mlx-qwen3-asr"
                     ),
                 }
             ),
@@ -44,30 +60,80 @@ def main() -> int:
         )
         return 2
 
-    runtime.LOG_STREAM = sys.stderr
-    context = runtime.ProbeContext(
-        model=str(model_path),
-        cache_dir=model_path.parent,
-        audio_path=None,
-        language=None,
-        trust_remote_code=True,
-        local_files_only=args.local_files_only,
-        max_new_tokens=None,
-    )
-    bridge = runtime.RuntimeJSONBridge(context, use_cache=True)
+    # Signal ready — model loads lazily on first transcribe call
+    print(json.dumps({"type": "ready"}), flush=True)
 
     for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
         try:
             request = json.loads(line)
-            if request.get("type") == "transcribe" and "audio_path" in request:
-                request["audio"] = request.pop("audio_path")
-            response = bridge.handle(request)
-        except Exception as error:
-            response = {"type": "error", "message": str(error)}
+        except json.JSONDecodeError:
+            print(
+                json.dumps({"type": "error", "message": "Invalid JSON"}),
+                flush=True,
+            )
+            continue
 
-        print(json.dumps(response, ensure_ascii=False), flush=True)
-        if response.get("type") == "stopped":
+        msg_type = request.get("type")
+
+        if msg_type == "start":
+            # Already signaled ready above; acknowledge
+            print(json.dumps({"type": "ready"}), flush=True)
+
+        elif msg_type == "transcribe":
+            audio_path = request.get("audio_path", "")
+            if not audio_path or not Path(audio_path).is_file():
+                print(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": f"Audio file not found: {audio_path}",
+                        }
+                    ),
+                    flush=True,
+                )
+                continue
+
+            try:
+                result = transcribe(
+                    audio_path,
+                    model=args.model,
+                    verbose=False,
+                    return_timestamps=False,
+                    return_chunks=True,
+                )
+                chunks = result.chunks or []
+                text = " ".join(
+                    (c.get("text") or "").strip() for c in chunks
+                ).strip()
+                if not text:
+                    text = (result.text or "").strip()
+                print(
+                    json.dumps({"type": "transcript", "text": text}),
+                    flush=True,
+                )
+            except Exception as error:
+                print(
+                    json.dumps(
+                        {"type": "error", "message": str(error)}
+                    ),
+                    flush=True,
+                )
+
+        elif msg_type == "stop":
+            print(json.dumps({"type": "stopped"}), flush=True)
             break
+
+        else:
+            print(
+                json.dumps(
+                    {"type": "error", "message": f"Unknown type: {msg_type}"}
+                ),
+                flush=True,
+            )
 
     return 0
 
