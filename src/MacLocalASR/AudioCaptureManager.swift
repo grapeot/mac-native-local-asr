@@ -9,26 +9,13 @@ final class AudioCaptureManager: @unchecked Sendable {
     var onDeviceUnavailable: (() -> Void)?
 
     private let engine = AVAudioEngine()
-    private let captureQueue = DispatchQueue(label: "MacLocalASR.AudioCapture")
-    private let stateLock = NSLock()
+    private let queue = DispatchQueue(label: "MacLocalASR.AudioCapture")
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
     private var pcmData = Data()
     private var maximumDurationTask: Task<Void, Never>?
     private var deviceObserver: NSObjectProtocol?
-    private var _isRecording = false
-
-    private var isRecording: Bool {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return _isRecording
-    }
-
-    private func setRecording(_ value: Bool) {
-        stateLock.lock()
-        _isRecording = value
-        stateLock.unlock()
-    }
+    private var isRecording = false
 
     deinit {
         removeDeviceListener()
@@ -38,7 +25,12 @@ final class AudioCaptureManager: @unchecked Sendable {
         guard await requestMicrophoneAccess() else {
             throw AudioCaptureError.microphoneAccessDenied
         }
-        guard !isRecording else { return }
+
+        let shouldStart = queue.sync { () -> Bool in
+            guard !isRecording else { return false }
+            return true
+        }
+        guard shouldStart else { return }
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -54,13 +46,11 @@ final class AudioCaptureManager: @unchecked Sendable {
             throw AudioCaptureError.converterUnavailable
         }
 
-        captureQueue.sync {
+        queue.sync {
             pcmData.removeAll(keepingCapacity: true)
+            converter = newConverter
+            outputFormat = destinationFormat
         }
-        stateLock.lock()
-        converter = newConverter
-        outputFormat = destinationFormat
-        stateLock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
             self?.convertAndAppend(buffer)
@@ -69,7 +59,7 @@ final class AudioCaptureManager: @unchecked Sendable {
         do {
             engine.prepare()
             try engine.start()
-            setRecording(true)
+            queue.sync { isRecording = true }
             installDeviceListener()
             maximumDurationTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(Self.maximumDuration))
@@ -83,10 +73,11 @@ final class AudioCaptureManager: @unchecked Sendable {
     }
 
     func stopRecording() throws -> URL {
-        guard isRecording else { throw AudioCaptureError.notRecording }
+        let recording = queue.sync { isRecording }
+        guard recording else { throw AudioCaptureError.notRecording }
         stopEngine()
 
-        let data = captureQueue.sync { pcmData }
+        let data = queue.sync { pcmData }
         guard !data.isEmpty else { throw AudioCaptureError.noAudioCaptured }
 
         let url = FileManager.default.temporaryDirectory
@@ -97,9 +88,10 @@ final class AudioCaptureManager: @unchecked Sendable {
     }
 
     func cancelRecording() {
-        guard isRecording else { return }
+        let recording = queue.sync { isRecording }
+        guard recording else { return }
         stopEngine()
-        captureQueue.sync {
+        queue.sync {
             pcmData.removeAll(keepingCapacity: false)
         }
     }
@@ -109,18 +101,16 @@ final class AudioCaptureManager: @unchecked Sendable {
         maximumDurationTask = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        stateLock.lock()
-        converter = nil
-        outputFormat = nil
-        stateLock.unlock()
-        setRecording(false)
+        queue.sync {
+            converter = nil
+            outputFormat = nil
+            isRecording = false
+        }
     }
 
     private func convertAndAppend(_ inputBuffer: AVAudioPCMBuffer) {
-        stateLock.lock()
-        let activeConverter = converter
-        let activeFormat = outputFormat
-        stateLock.unlock()
+        let activeConverter: AVAudioConverter? = queue.sync { converter }
+        let activeFormat: AVAudioFormat? = queue.sync { outputFormat }
         guard let converter = activeConverter, let outputFormat = activeFormat else { return }
 
         let ratio = outputFormat.sampleRate / inputBuffer.format.sampleRate
@@ -150,7 +140,7 @@ final class AudioCaptureManager: @unchecked Sendable {
 
         let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
         let chunk = Data(bytes: audioBuffer, count: byteCount)
-        captureQueue.sync {
+        queue.sync {
             pcmData.append(chunk)
         }
     }
@@ -192,7 +182,9 @@ final class AudioCaptureManager: @unchecked Sendable {
             object: engine,
             queue: nil
         ) { [weak self] _ in
-            guard let self, self.isRecording else { return }
+            guard let self else { return }
+            let recording = self.queue.sync { self.isRecording }
+            guard recording else { return }
             self.onDeviceUnavailable?()
         }
     }
