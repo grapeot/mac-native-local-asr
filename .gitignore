@@ -1,0 +1,32 @@
+# Dependencies
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.o
+*.a
+*.dylib
+
+# Python (for bridge scripts if any)
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# OS
+.DS_Store
+*.swp
+*~
+
+# Logs
+logs/
+*.log
+
+# Local model cache (users download their own)
+.model_cache/
