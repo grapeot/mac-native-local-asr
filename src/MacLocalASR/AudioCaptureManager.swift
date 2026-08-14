@@ -7,6 +7,7 @@ final class AudioCaptureManager: @unchecked Sendable {
 
     var onMaximumDuration: (() -> Void)?
     var onDeviceUnavailable: (() -> Void)?
+    var onAudioLevel: ((Float) -> Void)?
 
     private let engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "MacLocalASR.AudioCapture")
@@ -140,6 +141,25 @@ final class AudioCaptureManager: @unchecked Sendable {
 
         let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
         let chunk = Data(bytes: audioBuffer, count: byteCount)
+
+        // Compute RMS audio level for UI feedback
+        let level: Float = {
+            guard byteCount > 0 else { return 0 }
+            var sumSquares: Float = 0
+            let sampleCount = byteCount / MemoryLayout<Int16>.size
+            audioBuffer.withMemoryRebound(to: Int16.self, capacity: sampleCount) { ptr in
+                for i in 0..<sampleCount {
+                    let s = Float(ptr[i]) / 32768.0
+                    sumSquares += s * s
+                }
+            }
+            let rms = sqrt(sumSquares / Float(max(sampleCount, 1)))
+            let db = 20 * log10(max(rms, 1e-7))
+            let normalized = Float(max(0, min(1, (db + 50) / 40)))
+            return normalized
+        }()
+        onAudioLevel?(level)
+
         queue.sync {
             pcmData.append(chunk)
         }

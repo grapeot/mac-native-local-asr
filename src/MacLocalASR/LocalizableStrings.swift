@@ -9,6 +9,7 @@ enum LocalizableStrings {
     static var errorPrefix: String { tr("Error:", "错误：") }
     static var lastPrefix: String { tr("Last:", "上次：") }
     static var settings: String { tr("Settings…", "设置…") }
+    static var showWindow: String { tr("Show Window", "显示窗口") }
     static var quit: String { tr("Quit", "退出") }
     static var copiedToClipboard: String { tr("Copied to clipboard", "已复制到剪贴板") }
     static var microphoneAccessRequired: String { tr("Microphone access required", "需要麦克风权限") }
@@ -40,6 +41,9 @@ enum LocalizableStrings {
     static var notRecording: String { tr("Recording is not active", "当前未在录音") }
     static var noAudioCaptured: String { tr("No audio was captured", "未录到音频") }
     static var emptyTranscript: String { tr("No speech was recognized", "未识别到语音") }
+    static var record: String { tr("Record", "录音") }
+    static var stop: String { tr("Stop", "停止") }
+    static var transcriptPlaceholder: String { tr("Your transcription will appear here", "转写结果将显示在这里") }
 
     private static func tr(_ en: String, _ zh: String) -> String {
         let preferredLanguages = Locale.preferredLanguages

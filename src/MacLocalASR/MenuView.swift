@@ -21,6 +21,10 @@ struct MenuView: View {
 
         Divider()
 
+        Button(LocalizableStrings.showWindow) {
+            appDelegateShared?.showMainWindow()
+        }
+
         if !appState.isConfigured {
             Button(LocalizableStrings.setup) {
                 appDelegateShared?.showSettings()

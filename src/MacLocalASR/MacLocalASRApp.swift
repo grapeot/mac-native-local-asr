@@ -30,6 +30,7 @@ var appDelegateShared: AppDelegate!
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private let controlServer = ControlServer()
 
@@ -37,14 +38,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         appDelegateShared = self
 
-        // Start control server for automated testing
         controlServer.start(appState: appStateShared)
 
-        // Auto-open settings on first launch if not configured
         if !SettingsStore.isConfigured() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.showSettings()
             }
+        } else {
+            // Show main window on launch when already configured
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showMainWindow()
+            }
+        }
+    }
+
+    func showMainWindow() {
+        if mainWindow == nil {
+            let hostingController = NSHostingController(rootView: MainRecordView(appState: appStateShared))
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = LocalizableStrings.appName
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.setContentSize(NSSize(width: 480, height: 640))
+            window.minSize = NSSize(width: 360, height: 480)
+            window.center()
+            window.isReleasedWhenClosed = false
+            mainWindow = window
+        }
+        mainWindow?.makeKeyAndOrderFront(nil)
+        mainWindow?.orderFrontRegardless()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NSApp.setActivationPolicy(.accessory)
         }
     }
 
@@ -62,7 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
         settingsWindow?.orderFrontRegardless()
-        // For accessory apps, briefly switch to regular to bring window to front
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

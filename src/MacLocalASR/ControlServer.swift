@@ -167,6 +167,12 @@ final class ControlServer: @unchecked Sendable {
             }
             return "{\"action\":\"settings_opened\"}"
 
+        case "/window":
+            DispatchQueue.main.async {
+                appDelegateShared?.showMainWindow()
+            }
+            return "{\"action\":\"window_opened\"}"
+
         default:
             return "{\"error\":\"unknown\",\"paths\":[\"/status\",\"/setup\",\"/toggle\",\"/settings\"]}"
         }

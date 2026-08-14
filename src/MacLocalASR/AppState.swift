@@ -18,12 +18,15 @@ final class AppState: ObservableObject {
     @Published private(set) var isBridgeReady = false
     @Published private(set) var isConfigured = false
     @Published private(set) var setupProgress = ""
+    @Published private(set) var recordingDuration: TimeInterval = 0
+    @Published private(set) var audioLevel: Float = 0
 
     private let audioCapture = AudioCaptureManager()
     private let bridgeClient = ASRBridgeClient()
     private let textOutput = TextOutputManager()
     private var hotkeyManager: HotkeyManager?
     private var errorTask: Task<Void, Never>?
+    private var recordingTimer: Timer?
 
     init() {
         hotkeyManager = HotkeyManager { [weak self] in
@@ -41,6 +44,11 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.audioCapture.cancelRecording()
                 self?.showError(LocalizableStrings.audioDeviceUnavailable)
+            }
+        }
+        audioCapture.onAudioLevel = { [weak self] level in
+            Task { @MainActor in
+                self?.audioLevel = level
             }
         }
 
@@ -133,6 +141,13 @@ final class AppState: ObservableObject {
         return String(lastTranscript.prefix(50)) + "..."
     }
 
+    var recordingTimerText: String {
+        let totalSeconds = Int(recordingDuration)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
     func toggleRecording() {
         switch phase {
         case .idle:
@@ -197,7 +212,13 @@ final class AppState: ObservableObject {
         do {
             try await audioCapture.startRecording()
             lastAction = ""
+            recordingDuration = 0
             phase = .recording
+            recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.recordingDuration += 0.1
+                }
+            }
         } catch {
             isBridgeReady = await bridgeClient.ready
             showError(error.localizedDescription)
@@ -207,6 +228,9 @@ final class AppState: ObservableObject {
     private func stopAndTranscribe() async {
         guard phase == .recording else { return }
         phase = .processing
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        audioLevel = 0
 
         do {
             let audioURL = try audioCapture.stopRecording()
