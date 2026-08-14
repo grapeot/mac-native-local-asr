@@ -1,6 +1,6 @@
 # Mac Native Local ASR App
 
-A macOS menu bar app for offline voice-to-text using local MLX-accelerated speech recognition. Press a global hotkey, speak, and your words appear at the cursor — no internet required.
+A macOS menu bar app for offline voice-to-text using local MLX-accelerated speech recognition. Press a global hotkey, speak, and your words are copied to the clipboard — no internet required.
 
 ## What it does
 
@@ -8,7 +8,7 @@ A macOS menu bar app for offline voice-to-text using local MLX-accelerated speec
 - Global hotkey (default: ⌘⇧Space) to toggle recording
 - Audio captured via AVAudioEngine and converted to 24 kHz mono PCM
 - Transcribed locally by Qwen3-ASR-1.7B through MLX
-- Text pasted at the cursor, with clipboard-only fallback
+- Transcript copied to clipboard — paste with ⌘V wherever you want
 - 100% offline — no network calls, no cloud APIs
 
 ## Requirements
@@ -51,11 +51,7 @@ Open Settings from the menu bar and set:
 
 ### 4. Grant permissions
 
-On first launch, the app will request:
-- **Microphone access** (required for recording)
-- **Accessibility access** (optional; required for automatic paste)
-
-Grant both in System Settings → Privacy & Security.
+On first launch, the app will request **microphone access** (required for recording). No Accessibility permission is needed — the app copies to the clipboard and you paste manually with ⌘V.
 
 ## License
 

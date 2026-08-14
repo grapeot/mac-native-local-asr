@@ -108,7 +108,6 @@ All user-visible strings have English and Simplified Chinese versions, selected 
 | Quit | 退出 |
 | Copied to clipboard | 已复制到剪贴板 |
 | Microphone access required | 需要麦克风权限 |
-| Accessibility access needed for auto-paste | 自动粘贴需要辅助功能权限 |
 | Hotkey | 快捷键 |
 | ASR Bridge Path | ASR 引擎路径 |
 | Model Path | 模型路径 |

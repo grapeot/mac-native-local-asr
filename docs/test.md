@@ -5,7 +5,7 @@
 Unit tests should cover the deterministic component contracts without requiring model weights.
 
 - **ASR bridge client**: JSONL protocol encoding/decoding, error handling, timeout
-- **Text output**: clipboard writing, keystroke event construction
+- **Text output**: clipboard writing (NSPasteboard clear + setString)
 - **Settings**: UserDefaults persistence, default values
 - **Audio output**: WAV header and 24 kHz mono Int16 format
 
@@ -19,7 +19,7 @@ Unit tests should cover the deterministic component contracts without requiring 
 The core user flow is verified manually:
 1. Launch app → menu bar icon appears
 2. Press hotkey → icon turns red (recording)
-3. Speak a sentence → press hotkey → icon turns yellow (processing) → text appears at cursor or clipboard
+3. Speak a sentence → press hotkey → icon turns yellow (processing) → text is copied to clipboard (verify with ⌘V)
 4. Check: text is accurate, no network was used (turn off Wi-Fi and repeat)
 5. Open Settings → change hotkey → verify new hotkey works
 6. Quit app → verify model process is cleaned up

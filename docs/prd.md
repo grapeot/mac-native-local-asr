@@ -10,10 +10,10 @@ Power users who want voice dictation on macOS without depending on cloud service
 
 ## Goals
 
-1. Press a global hotkey anywhere on macOS → speak → text appears at cursor or in clipboard
+1. Press a global hotkey anywhere on macOS → speak → text is copied to clipboard, ready to paste with ⌘V
 2. Works 100% offline with no network calls
 3. Uses Qwen3-ASR-1.7B via MLX for high-quality Chinese/English/mixed recognition
-4. Low latency: under 2 seconds from stop-speaking to text-output
+4. Low latency: under 2 seconds from stop-speaking to text-copied
 5. Battery-aware: model stays resident but inference is fast enough to not drain battery
 
 ## Non-Goals
@@ -28,8 +28,8 @@ Power users who want voice dictation on macOS without depending on cloud service
 
 - [ ] App installs and runs as a menu bar item with no dock icon
 - [ ] Global hotkey toggles recording; menu bar icon changes state (idle/recording/processing)
-- [ ] Spoken Chinese text appears at cursor position within 2 seconds of speaking
-- [ ] Spoken English text appears at cursor position within 2 seconds of speaking
+- [ ] Spoken Chinese text copied to clipboard within 2 seconds of speaking
+- [ ] Spoken English text copied to clipboard within 2 seconds of speaking
 - [ ] Chinese-English mixed speech (e.g., "用 PyTorch 写一个 Transformer") transcribed correctly
 - [ ] Works with Wi-Fi turned off (verified by disabling network)
 - [ ] Model loads once at app startup and stays resident for the session
@@ -42,4 +42,5 @@ Power users who want voice dictation on macOS without depending on cloud service
 - macOS 14+ (SwiftUI MenuBarExtra requires Sonoma)
 - Apple Silicon only (MLX is Apple-specific)
 - qwen3-asr-mlx-runtime must be pre-installed by user
-- Accessibility permission required for global hotkey and cursor text insertion
+- Microphone permission required for recording
+- No Accessibility permission needed (clipboard-only output, no simulated keystrokes)

@@ -25,7 +25,6 @@
     "menu.quit" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Quit" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "退出" } } } },
     "menu.settings" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings..." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "设置..." } } } },
     "output.copied" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Copied to clipboard" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已复制到剪贴板" } } } },
-    "output.pasted" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pasted" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已粘贴" } } } },
     "settings.bridge_path" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "ASR Bridge Path" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "ASR 引擎路径" } } } },
     "settings.browse" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Browse..." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "浏览..." } } } },
     "settings.close" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Close" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭" } } } },

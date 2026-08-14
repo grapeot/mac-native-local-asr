@@ -11,7 +11,11 @@
 - Identified qwen3-asr-mlx-runtime as the ASR backend (subprocess, not in-process MLX)
 - Decided against reusing VoiceFlowKit (cloud-transport design incompatible with local-only app)
 - GPT implemented core app: 13 Swift files, Python bridge script, String Catalog, Package.swift
-- GPT self-review found 5 issues; main thread fixed 3 most important:
+- User clarified: output should be clipboard-only (auto-copy), not auto-paste
+- Removed all CGEvent paste simulation, Accessibility permission, and frontmost-app tracking
+- Updated all docs (PRD, RFC, design.md, test.md, AGENTS.md, README.md) to reflect clipboard-only output
+- Removed `output.pasted` string from LocalizableStrings.swift and xcstrings catalog
+- No Accessibility permission needed anymore — only microphone
   1. Python bridge: model now loads on "start" before returning "ready" (was returning ready before loading)
   2. AudioCaptureManager: added NSLock to protect converter/outputFormat/isRecording from cross-thread races
   3. TextOutputManager: record frontmost app at recording start, only auto-paste if same app is frontmost when transcription completes

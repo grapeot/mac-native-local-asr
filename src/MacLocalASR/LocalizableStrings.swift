@@ -11,7 +11,6 @@ enum LocalizableStrings {
     static let settings = localized("menu.settings")
     static let quit = localized("menu.quit")
     static let copiedToClipboard = localized("output.copied")
-    static let pasted = localized("output.pasted")
     static let microphoneAccessRequired = localized("error.microphone_access")
     static let hotkey = localized("settings.hotkey")
     static let bridgePath = localized("settings.bridge_path")

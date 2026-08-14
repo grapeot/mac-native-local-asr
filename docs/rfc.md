@@ -24,10 +24,8 @@
 │                                    │               │
 │                    ┌───────────────▼─────────────┐ │
 │                    │ Text Output                 │ │
-│                    │ 1. Write to NSPasteboard    │ │
-│                    │ 2. Simulate ⌘V keystroke     │ │
-│                    │    (if Accessibility granted)│ │
-│                    │ Fallback: "Copied" status   │ │
+│                    │ Write to NSPasteboard       │ │
+│                    │ User pastes manually (⌘V)  │ │
 │                    └─────────────────────────────┘ │
 └──────────────────────────────────────────────────┘
 ```
@@ -120,17 +118,13 @@ Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
 
 ### 5. TextOutputManager
 
-Single output path, no mode switching:
+Single output path: write transcript to `NSPasteboard.general.clearContents()` + `setString(transcript)`. The user pastes manually with ⌘V.
 
-1. Write transcript to `NSPasteboard.general.clearContents()` + `setString(transcript)`
-2. If Accessibility permission granted: simulate ⌘V via `CGEvent(keyCode:kVK_ANSI_V, flags:.commandDown)`
-3. If Accessibility not granted or paste fails: show "Copied to clipboard" in menu bar
-
-This is one `NSPasteboard` write + one key event. No per-character typing. No Unicode fragility.
+No simulated keystrokes, no Accessibility permission required. One `NSPasteboard` write. Simple and universal.
 
 **Permission handling**: 
 - Microphone: required. App requests on first recording. If denied, show error.
-- Accessibility: optional. If granted, auto-paste works. If not, clipboard-only with manual paste.
+- No Accessibility permission needed.
 
 ### 6. SettingsStore
 
@@ -152,9 +146,9 @@ The `qwen3-asr-mlx-runtime` is a Python project. Bridging Python+MLX into Swift 
 
 VAD adds complexity (thresholds, silence detection, calibration across devices) and failure modes (aircraft noise, room acoustics) that don't exist when the user explicitly presses a hotkey to start and stop. Toggle mode makes the recording boundary deterministic. VAD can be added later if users want auto-segmented continuous dictation.
 
-### Why clipboard + ⌘V, not per-character CGEvent?
+### Why clipboard-only, no auto-paste?
 
-Per-character `CGEvent` typing is fragile for Unicode text (Chinese characters, emoji, mixed scripts). Some apps (Terminal, Electron, secure fields) don't reliably accept simulated Unicode keystrokes. Writing to `NSPasteboard` and simulating one ⌘V is universal — every macOS text field that accepts paste will work. If Accessibility is unavailable, the user still has the text in clipboard for manual paste.
+Auto-paste via `CGEvent` requires Accessibility permission, which adds friction at setup and prompts users unexpectedly. Clipboard-only output is universal — every macOS text field accepts ⌘V — and requires zero extra permissions. The user presses ⌘V when and where they want the text.
 
 ### Why not VoiceFlowKit?
 
