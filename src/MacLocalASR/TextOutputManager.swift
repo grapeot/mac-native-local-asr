@@ -10,31 +10,6 @@ struct TextOutputManager {
 
     @discardableResult
     func output(_ text: String) -> Bool {
-        guard copy(text) else { return false }
-        guard AXIsProcessTrusted() else {
-            // Prompt for Accessibility only when user actually wants auto-paste
-            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-            AXIsProcessTrustedWithOptions(options)
-            return false
-        }
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let keyDown = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_V),
-                keyDown: true
-              ),
-              let keyUp = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_V),
-                keyDown: false
-              ) else {
-            return false
-        }
-
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-        return true
+        copy(text)
     }
 }
