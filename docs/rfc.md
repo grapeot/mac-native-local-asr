@@ -131,10 +131,37 @@ No simulated keystrokes, no Accessibility permission required. One `NSPasteboard
 Persisted via `@AppStorage` (UserDefaults):
 
 - `hotkey` — global hotkey combo (default: ⌘⇧Space)
-- `asrRuntimePath` — path to `start_asr_bridge.py` script
-- `asrModelPath` — local path to model directory (must exist, no implicit download)
+- `asrModelId` — HuggingFace model ID (default: `Qwen/Qwen3-ASR-1.7B`)
 
-Three settings. That's it. No LLM settings, no output mode, no recording mode.
+Two user-visible settings. The venv path (`~/.maclocalasr/.venv`), bridge script path (`~/.maclocalasr/start_asr_bridge.py`), and model ID are managed automatically by `SetupRunner` — the user never types paths.
+
+### 7. SetupRunner
+
+Runs on first launch (or when the user clicks "Setup…" in Settings or the menu bar). Creates a self-contained Python environment without requiring user input:
+
+1. Find system Python 3 (`/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, `/usr/bin/python3`)
+2. Create venv at `~/.maclocalasr/.venv`
+3. `pip install mlx-qwen3-asr` into the venv
+4. Verify `import mlx_qwen3_asr` succeeds
+5. Write the embedded bridge script to `~/.maclocalasr/start_asr_bridge.py`
+6. On completion, the app auto-starts the ASR bridge
+
+The bridge script content is embedded as a Swift string literal — no external file dependency. This eliminates "file not found" errors regardless of how the app is launched (swift run, Xcode, .app bundle).
+
+Progress is reported via a callback to `AppState.setupProgress` for display in the Settings window.
+
+### 8. ControlServer (automated testing)
+
+A minimal HTTP server on `localhost:17843` that allows external tools (curl, CI scripts, AI agents) to query state and trigger actions without GUI interaction. This is a **business requirement**: the app must be testable end-to-end from the command line.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/status` | GET | Returns JSON: `phase`, `configured`, `ready`, `lastTranscript`, `setupProgress` |
+| `/setup` | GET | Triggers `SetupRunner.runSetup()` asynchronously |
+| `/toggle` | GET | Triggers `AppState.toggleRecording()` |
+| `/settings` | GET | Opens the Settings window |
+
+Socket I/O runs on a background `Thread`; MainActor calls are dispatched via `DispatchQueue.main`. The server binds to `127.0.0.1` only — no external access.
 
 ## Key Design Decisions
 
@@ -165,7 +192,7 @@ LLM post-processing adds a dependency on another user-managed service (Ollama/LM
 ## Dependencies
 
 - **KeyboardShortcuts** (SPM, MIT) — global hotkey registration
-- **qwen3-asr-mlx-runtime** (external, user-installed, Apache-2.0) — ASR backend
+- **mlx-qwen3-asr** (pip, auto-installed by SetupRunner) — ASR backend
 
 No other dependencies. No Ollama, no LM Studio, no ONNX Runtime in the MVP.
 
@@ -175,4 +202,4 @@ No other dependencies. No Ollama, no LM Studio, no ONNX Runtime in the MVP.
 - Silero VAD for auto-segmented continuous dictation
 - Recording history (last N transcripts viewable in menu dropdown)
 - Model selection (0.6B vs 1.7B)
-- Notarized Developer ID distribution
+- Notarized Developer ID distribution as a proper .app bundle

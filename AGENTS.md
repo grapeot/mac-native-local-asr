@@ -36,23 +36,30 @@ A macOS menu bar app for offline voice-to-text using local MLX speech recognitio
 ## Build & Test
 
 ```bash
-# Build from the repository root
+# Build
 swift build --package-path src
 
-# Run from the repository root
-swift run --package-path src MacLocalASR
-
-# Or open src/Package.swift in Xcode and run the MacLocalASR scheme
+# Automated test via ControlServer (no GUI needed)
+swift run --package-path src MacLocalASR &
+sleep 3
+curl -sf http://127.0.0.1:17843/status   # check state
+curl -sf http://127.0.0.1:17843/setup    # trigger first-run setup
+# Poll /status until "configured":true
+# See docs/test.md for the full automated test flow
 ```
+
+Every change must be verified via ControlServer before commit. Do not hand off to the user for manual testing if automated testing covers the change.
 
 ## Key Architecture Decisions
 
 1. **Menu bar app, not window app** — `MenuBarExtra` with `.menu` style in SwiftUI. No dock icon.
 2. **Toggle hotkey only** — press to start recording, press again to stop. No VAD, no push-to-talk.
 3. **AVAudioEngine + AVAudioConverter** — macOS-native audio capture with explicit conversion to 24kHz Int16 mono.
-4. **qwen3-asr-mlx-runtime as subprocess** — JSONL protocol, model stays resident, single WAV file per utterance.
+4. **mlx-qwen3-asr via subprocess** — JSONL protocol, model stays resident, single WAV file per utterance. Auto-installed by SetupRunner, no user path config.
 5. **Clipboard-only text output** — write to NSPasteboard, user pastes manually with ⌘V. No simulated keystrokes, no Accessibility permission.
 6. **No LLM post-processing in MVP** — Qwen3-ASR-1.7B includes punctuation. LLM cleanup is Phase 2.
+7. **Self-contained setup** — SetupRunner creates venv, installs mlx-qwen3-asr, writes bridge script. User clicks "Setup" once, no path entry.
+8. **ControlServer for automated testing** — HTTP server on localhost:17843 allows curl-based end-to-end testing without GUI. Business requirement.
 
 ## What NOT to do
 
