@@ -10,10 +10,10 @@ enum SetupRunner {
     // This eliminates any "file not found" dependency on the repo layout.
     static let bridgeScriptContent = #"""
 #!/usr/bin/env python3
-"""Minimal JSONL bridge for Qwen3-ASR on Apple Silicon via mlx-qwen3-asr."""
+"""Minimal JSONL bridge for Qwen3-ASR with sounddevice recording on Apple Silicon."""
 
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, sys, tempfile, wave
 from pathlib import Path
 
 def main() -> int:
@@ -23,9 +23,16 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        from mlx_qwen3_asr import transcribe
+        from mlx_qwen3_asr import transcribe, load_model
     except ImportError:
         print(json.dumps({"type": "error", "message": "mlx-qwen3-asr not installed"}), flush=True)
+        return 2
+
+    try:
+        import sounddevice as sd
+        import numpy as np
+    except ImportError:
+        print(json.dumps({"type": "error", "message": "sounddevice/numpy not installed"}), flush=True)
         return 2
 
     model_loaded = {"v": False}
@@ -33,12 +40,37 @@ def main() -> int:
         if model_loaded["v"]:
             return None
         try:
-            from mlx_qwen3_asr import load_model
             load_model(args.model)
             model_loaded["v"] = True
             return None
         except Exception as e:
             return str(e)
+
+    SR = 24000
+
+    def record_audio(duration_sec: float, device_name: str | None = None) -> str | None:
+        """Record audio via sounddevice, return path to temp WAV file."""
+        try:
+            device = None
+            if device_name:
+                devices = sd.query_devices()
+                for i, d in enumerate(devices):
+                    if device_name in d["name"] and d["max_input_channels"] > 0:
+                        device = i
+                        break
+            audio = sd.rec(int(duration_sec * SR), samplerate=SR, channels=1,
+                          dtype="int16", device=device)
+            sd.wait()
+            wav_path = tempfile.mktemp(suffix=".wav")
+            with wave.open(wav_path, "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(SR)
+                wf.writeframes(audio.tobytes())
+            return wav_path
+        except Exception as e:
+            print(json.dumps({"type": "error", "message": f"Recording failed: {e}"}), flush=True)
+            return None
 
     for line in sys.stdin:
         line = line.strip()
@@ -56,6 +88,23 @@ def main() -> int:
                 print(json.dumps({"type": "error", "message": f"Model load failed: {err}"}), flush=True)
                 return 2
             print(json.dumps({"type": "ready"}), flush=True)
+        elif t == "record_and_transcribe":
+            duration = req.get("duration", 5.0)
+            device_name = req.get("device_name")
+            wav_path = record_audio(duration, device_name)
+            if not wav_path:
+                continue
+            try:
+                r = transcribe(wav_path, model=args.model, verbose=False, return_timestamps=False, return_chunks=True)
+                chunks = r.chunks or []
+                text = " ".join((c.get("text") or "").strip() for c in chunks).strip()
+                if not text:
+                    text = (r.text or "").strip()
+                print(json.dumps({"type": "transcript", "text": text}), flush=True)
+            except Exception as e:
+                print(json.dumps({"type": "error", "message": str(e)}), flush=True)
+            finally:
+                Path(wav_path).unlink(missing_ok=True)
         elif t == "transcribe":
             ap = req.get("audio_path", "")
             if not ap or not Path(ap).is_file():
@@ -110,7 +159,7 @@ if __name__ == "__main__":
         // Step 3: Install mlx-qwen3-asr
         await MainActor.run { progress("Installing mlx-qwen3-asr (this may take a minute)…") }
         _ = await runProcess(venvPython.path, args: ["-m", "pip", "install", "--upgrade", "pip", "--quiet"])
-        let installResult = await runProcess(venvPython.path, args: ["-m", "pip", "install", "mlx-qwen3-asr", "--quiet"])
+        let installResult = await runProcess(venvPython.path, args: ["-m", "pip", "install", "mlx-qwen3-asr", "sounddevice", "numpy", "--quiet"])
         if !installResult.success {
             await MainActor.run { progress("Error installing mlx-qwen3-asr: \(installResult.stderr)") }
             return false

@@ -21,6 +21,7 @@ final class ControlServer: @unchecked Sendable {
         var ready: Bool = false
         var lastTranscript: String = ""
         var setupProgress: String = ""
+        var audioLevel: Float = 0
     }
 
     func start(appState: AppState) {
@@ -91,7 +92,8 @@ final class ControlServer: @unchecked Sendable {
             configured: appState.isConfigured,
             ready: appState.isBridgeReady,
             lastTranscript: appState.lastTranscript,
-            setupProgress: appState.setupProgress
+            setupProgress: appState.setupProgress,
+            audioLevel: appState.audioLevel
         )
         snapshotLock.lock()
         stateSnapshot = snap
@@ -143,7 +145,7 @@ final class ControlServer: @unchecked Sendable {
             let snap = getSnapshot()
             let t = snap.lastTranscript.replacingOccurrences(of: "\"", with: "\\\"")
             let sp = snap.setupProgress.replacingOccurrences(of: "\"", with: "\\\"")
-            return "{\"phase\":\"\(snap.phase)\",\"configured\":\(snap.configured),\"ready\":\(snap.ready),\"lastTranscript\":\"\(t)\",\"setupProgress\":\"\(sp)\"}"
+            return "{\"phase\":\"\(snap.phase)\",\"configured\":\(snap.configured),\"ready\":\(snap.ready),\"audioLevel\":\(snap.audioLevel),\"lastTranscript\":\"\(t)\",\"setupProgress\":\"\(sp)\"}"
 
         case "/setup":
             let state = self.appState

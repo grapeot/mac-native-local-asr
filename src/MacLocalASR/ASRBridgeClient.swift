@@ -45,6 +45,25 @@ actor ASRBridgeClient {
         }
     }
 
+    func recordAndTranscribe(duration: Double, deviceName: String?) async throws -> String {
+        guard isReady else { throw BridgeError.notReady }
+
+        var payload: [String: String] = ["type": "record_and_transcribe", "duration": String(duration)]
+        if let deviceName { payload["device_name"] = deviceName }
+
+        do {
+            let response = try await request(payload, timeout: .seconds(max(15, duration + 10)))
+            guard response.type == "transcript", let text = response.text else {
+                throw BridgeError.unexpectedResponse
+            }
+            return text
+        } catch {
+            await terminateProcess()
+            try? await restartAfterFailure()
+            throw error
+        }
+    }
+
     func stop() async {
         stopping = true
         if process?.isRunning == true {

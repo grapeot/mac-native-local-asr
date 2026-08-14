@@ -12,7 +12,9 @@ final class AudioCaptureManager: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "MacLocalASR.AudioCapture")
     private var converter: AVAudioConverter?
+    private var downmixConverter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
+    private var monoFormat: AVAudioFormat?
     private var pcmData = Data()
     private var maximumDurationTask: Task<Void, Never>?
     private var deviceObserver: NSObjectProtocol?
@@ -135,19 +137,39 @@ final class AudioCaptureManager: @unchecked Sendable {
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw AudioCaptureError.noInputDevice
         }
+        // Create an intermediate mono format at the input sample rate, then convert to 24kHz
+        // This handles multi-channel aggregate devices by downmixing to mono first
+        guard let monoInputFormat = AVAudioFormat(
+            commonFormat: inputFormat.commonFormat,
+            sampleRate: inputFormat.sampleRate,
+            channels: 1,
+            interleaved: inputFormat.isInterleaved
+        ) else {
+            throw AudioCaptureError.converterUnavailable
+        }
         guard let destinationFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: Self.sampleRate,
             channels: 1,
             interleaved: true
-        ), let newConverter = AVAudioConverter(from: inputFormat, to: destinationFormat) else {
+        ) else {
+            throw AudioCaptureError.converterUnavailable
+        }
+        // First converter: multi-channel → mono at input sample rate
+        // Second converter: mono at input rate → mono Int16 at 24kHz
+        let downmixConverter = AVAudioConverter(from: inputFormat, to: monoInputFormat)
+        let rateConverter = AVAudioConverter(from: monoInputFormat, to: destinationFormat)
+        guard let newConverter = rateConverter,
+              let newDownmix = downmixConverter else {
             throw AudioCaptureError.converterUnavailable
         }
 
         queue.sync {
-            pcmData.removeAll(keepingCapacity: true)
-            converter = newConverter
-            outputFormat = destinationFormat
+            self.pcmData.removeAll(keepingCapacity: true)
+            self.converter = newConverter
+            self.downmixConverter = newDownmix
+            self.outputFormat = destinationFormat
+            self.monoFormat = monoInputFormat
         }
 
         inputNode.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
@@ -201,7 +223,9 @@ final class AudioCaptureManager: @unchecked Sendable {
         engine.stop()
         queue.sync {
             converter = nil
+            downmixConverter = nil
             outputFormat = nil
+            monoFormat = nil
             isRecording = false
         }
         // Restore previous default input device
@@ -212,26 +236,52 @@ final class AudioCaptureManager: @unchecked Sendable {
     }
 
     private func convertAndAppend(_ inputBuffer: AVAudioPCMBuffer) {
+        let activeDownmix: AVAudioConverter? = queue.sync { downmixConverter }
+        let activeMono: AVAudioFormat? = queue.sync { monoFormat }
         let activeConverter: AVAudioConverter? = queue.sync { converter }
         let activeFormat: AVAudioFormat? = queue.sync { outputFormat }
-        guard let converter = activeConverter, let outputFormat = activeFormat else { return }
 
-        let ratio = outputFormat.sampleRate / inputBuffer.format.sampleRate
-        let capacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio)) + 1
+        guard let outputFormat = activeFormat, let finalConverter = activeConverter else { return }
+
+        // Step 1: Downmix multi-channel to mono if needed
+        let monoBuffer: AVAudioPCMBuffer
+        if let downmix = activeDownmix, let monoFmt = activeMono, inputBuffer.format.channelCount > 1 {
+            let monoCapacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength)))
+            guard let mb = AVAudioPCMBuffer(pcmFormat: monoFmt, frameCapacity: monoCapacity) else { return }
+            let downmixState = ConverterInputState()
+            var downmixError: NSError?
+            let downmixStatus = downmix.convert(to: mb, error: &downmixError) { _, inputStatus in
+                if downmixState.wasSupplied {
+                    inputStatus.pointee = .noDataNow
+                    return nil
+                }
+                downmixState.wasSupplied = true
+                inputStatus.pointee = .haveData
+                return inputBuffer
+            }
+            guard downmixError == nil, downmixStatus != .error, mb.frameLength > 0 else { return }
+            monoBuffer = mb
+        } else {
+            monoBuffer = inputBuffer
+        }
+
+        // Step 2: Convert mono at input rate to mono Int16 at 24kHz
+        let ratio = outputFormat.sampleRate / monoBuffer.format.sampleRate
+        let capacity = AVAudioFrameCount(ceil(Double(monoBuffer.frameLength) * ratio)) + 1
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
             return
         }
 
         let inputState = ConverterInputState()
         var conversionError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+        let status = finalConverter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
             if inputState.wasSupplied {
                 inputStatus.pointee = .noDataNow
                 return nil
             }
             inputState.wasSupplied = true
             inputStatus.pointee = .haveData
-            return inputBuffer
+            return monoBuffer
         }
 
         guard conversionError == nil,

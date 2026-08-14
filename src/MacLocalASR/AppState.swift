@@ -91,7 +91,7 @@ final class AppState: ObservableObject {
         case .recording:
             "waveform.circle.fill"
         case .processing:
-            "waveform.circle.badge.ellipsis"
+            "waveform.badge.ellipsis"
         case .error:
             "exclamationmark.triangle.fill"
         }
@@ -212,7 +212,6 @@ final class AppState: ObservableObject {
 
         do {
             try await audioCapture.startRecording()
-            lastAction = ""
             recordingDuration = 0
             phase = .recording
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
