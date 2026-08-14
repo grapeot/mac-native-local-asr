@@ -6,52 +6,49 @@ A macOS menu bar app for offline voice-to-text using local MLX-accelerated speec
 
 - Lives in the menu bar — no window, no dock icon
 - Global hotkey (default: ⌘⇧Space) to toggle recording
-- Audio captured via AVAudioEngine and converted to 24 kHz mono PCM
+- Physical input device selected through AVFoundation and converted to 24 kHz mono PCM
 - Transcribed locally by Qwen3-ASR-1.7B through MLX
 - Transcript copied to clipboard — paste with ⌘V wherever you want
-- 100% offline — no network calls, no cloud APIs
+- Offline after first-time setup — no cloud APIs during transcription
 
 ## Requirements
 
 - macOS 14.0+ (Sonoma)
 - Apple Silicon Mac (M1 or later)
-- [qwen3-asr-mlx-runtime](https://github.com/drguptavivek/qwen3-asr-mlx-runtime) installed and model downloaded
+- Python 3 available in a standard Homebrew or system location
 
 ## Installation
 
-### 1. Install qwen3-asr-mlx-runtime
+### 1. Build the signed app bundle
 
 ```bash
-git clone https://github.com/drguptavivek/qwen3-asr-mlx-runtime.git ~/qwen3-asr-mlx-runtime
-uv venv .venv --python 3.12
-uv pip install --python .venv/bin/python -e ~/qwen3-asr-mlx-runtime
+bash scripts/build_app.sh
+open ~/Applications/MacLocalASR.app
 ```
 
-The app never downloads a model. Download Qwen3-ASR-1.7B while online and keep
-the resulting snapshot in a local directory.
+An Apple Development certificate is used when available; otherwise the script
+falls back to ad-hoc signing. A stable signature is required for macOS to retain
+microphone permission between builds.
 
-### 2. Build and run the app
+### 2. Run first-time setup
 
-Open `src/Package.swift` in Xcode and run the `MacLocalASR` executable scheme.
+Click **Setup** once. The app creates `~/.maclocalasr/.venv`, installs
+`mlx-qwen3-asr`, writes its bridge script, and loads Qwen3-ASR-1.7B. This step
+requires internet access; recording and transcription are offline afterward.
 
-Or from command line:
+Open Settings to change the global hotkey or select a physical input device.
 
-```bash
-cd src
-swift run MacLocalASR
-```
-
-### 3. Configure
-
-Open Settings from the menu bar and set:
-
-- ASR Bridge Path: this repository's `scripts/start_asr_bridge.py`
-- Model Path: the downloaded local model directory
-- Hotkey: defaults to ⌘⇧Space and can be changed in the recorder
-
-### 4. Grant permissions
+### 3. Grant permission
 
 On first launch, the app will request **microphone access** (required for recording). No Accessibility permission is needed — the app copies to the clipboard and you paste manually with ⌘V.
+
+## Testing
+
+```bash
+swift test --package-path src
+bash tests/e2e.sh
+bash tests/live_audio.sh  # signed app + granted microphone permission required
+```
 
 ## License
 

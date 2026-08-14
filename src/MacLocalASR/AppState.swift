@@ -40,12 +40,6 @@ final class AppState: ObservableObject {
                 await self?.stopAndTranscribe()
             }
         }
-        audioCapture.onDeviceUnavailable = { [weak self] in
-            Task { @MainActor in
-                self?.audioCapture.cancelRecording()
-                self?.showError(LocalizableStrings.audioDeviceUnavailable)
-            }
-        }
         audioCapture.onAudioLevel = { [weak self] level in
             Task { @MainActor in
                 self?.audioLevel = level
@@ -211,6 +205,7 @@ final class AppState: ObservableObject {
         }
 
         do {
+            audioLevel = 0
             try await audioCapture.startRecording()
             recordingDuration = 0
             phase = .recording

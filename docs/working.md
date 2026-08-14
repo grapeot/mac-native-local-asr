@@ -28,6 +28,27 @@
 - Added input device picker in Settings using AVCaptureDevice.DiscoverySession; AudioCaptureManager switches system default input device via Core Audio before recording and restores after
 - Verified E2E test still passes after device selection changes
 
+## 2026-08-14
+
+- Reproduced misleading zero-level tests and found that an Xcode `debugserver`
+  had left an older suspended app holding port 17844; new launches failed to bind
+  and curl continued talking to the stale process.
+- Found that the build script reset microphone TCC permission on every build and
+  selected a duplicated certificate by display name, producing an ambiguous
+  signing failure. Signing now uses the certificate hash and TCC reset is opt-in.
+- Replaced aggregate-device capture with `AVCaptureSession`, which opens the
+  selected physical microphone directly without changing the system default.
+- Added the missing native-format handling: `CMSampleBuffer` PCM is copied into
+  `AVAudioPCMBuffer` and converted through `AVAudioConverter` to 24kHz mono Int16.
+- Verified the signed app end to end through ControlServer: live microphone level
+  reached 0.316 and the resulting transcript was `This is the test message.`
+- Extracted the WAV encoder and added a deterministic Swift test for its complete
+  header and payload contract.
+- Added `tests/live_audio.sh` for signed-app/TCC/hardware regression testing and
+  tightened `tests/e2e.sh` to assert actual fixture transcription output.
+- Removed the unused Python `sounddevice` recording branch and its extra
+  dependencies; Swift is the single audio-capture owner and Python only transcribes.
+
 ## Lessons Learned
 
 - GPT tends to over-engineer but its design review was valuable: the VAD, push-to-talk, and per-character CGEvent suggestions were correctly flagged as unnecessary complexity. The key insight was that toggle mode (explicit start/stop) makes VAD redundant for an MVP dictation tool.
@@ -37,4 +58,6 @@
 - Swift 6 strict concurrency disallows `NSLock.lock()/unlock()` in async contexts — use `DispatchQueue.sync` instead.
 - Socket I/O (accept/read) blocks the thread — must run on a background `Thread`, not on MainActor. Otherwise `Task` dispatches from within the accept loop never execute.
 - **Automated testing is a business requirement.** A GUI-only app that requires manual clicking to verify creates a slow feedback loop. The ControlServer pattern (embedded HTTP server with /status, /setup, /toggle endpoints) lets AI agents and CI scripts test the full flow without human interaction. Every macOS app in this workspace should adopt this pattern.
-- **AVAudioEngine.inputNode always uses the system default input device on macOS.** If the user has an aggregate device (e.g. BlackHole + microphone mix) set as default, AVAudioEngine will capture from that multi-channel mix, not the actual microphone. Solution: use Core Audio `kAudioHardwarePropertyDefaultInputDevice` to temporarily switch the system default before recording, then restore after. This is what life_record's recording service does (via sounddevice's device selection).
+- **Test the process identity before debugging its behavior.** A stale Xcode-debugged process can keep the ControlServer port while ignoring normal termination signals. Verify the listener PID and parent process before trusting curl results.
+- **Do not reset TCC during routine builds.** macOS permission is tied to code identity. Stable signing preserves approval; automatic reset turns every capture test into an unresolved permission prompt.
+- **Do not label native capture bytes as a target WAV format.** `AVCaptureAudioDataOutput` emits the device's native ASBD. Parse that format and run an explicit conversion before writing a 24kHz Int16 header.

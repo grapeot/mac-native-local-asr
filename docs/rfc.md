@@ -7,8 +7,8 @@
 │              Menu Bar App (SwiftUI)                │
 │                                                   │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────┐  │
-│  │ Global   │    │ AVAudio-    │    │ WAV      │  │
-│  │ Hotkey   │───▶│ Engine      │───▶│ file     │  │
+│  │ Global   │    │ AVCapture   │    │ WAV      │  │
+│  │ Hotkey   │───▶│ + converter │───▶│ file     │  │
 │  │ (toggle) │    │ → 24kHz     │    │ (temp)   │  │
 │  └──────────┘    └──────────────┘    └────┬─────┘  │
 │                                            │       │
@@ -16,8 +16,8 @@
 │                            │ ASR Bridge Client  │  │
 │                            │ (JSONL subprocess) │  │
 │                            │ ┌────────────────┐ │  │
-│                            │ │ qwen3-asr-mlx-  │ │  │
-│                            │ │ runtime process │ │  │
+│                            │ │ mlx-qwen3-asr   │ │  │
+│                            │ │ Python process  │ │  │
 │                            │ │ (model resident)│ │  │
 │                            │ └────────────────┘ │  │
 │                            └───────┬────────────┘  │
@@ -77,21 +77,22 @@ Uses the `KeyboardShortcuts` SPM package. Default: ⌘⇧Space. User-configurabl
 
 ### 3. AudioCaptureManager
 
-`AVAudioEngine` with `installTap(onBus:0, bufferSize:4096, format:)`.
+`AVCaptureSession` with an `AVCaptureDeviceInput` and serial
+`AVCaptureAudioDataOutput` delegate.
 
-- Input: default input device or user-selected device via Core Audio device switching
+- Input: default input device or a user-selected physical device opened directly by `uniqueID`
 - Input format: whatever the device provides (commonly 44.1/48kHz, Float32, stereo or mono)
-- Conversion: `AVAudioConverter` to transform to 24kHz, Int16, mono PCM
+- Conversion: copy each `CMSampleBuffer` into an `AVAudioPCMBuffer`, then use `AVAudioConverter` to produce 24kHz, Int16, mono PCM
 - Output: accumulated PCM buffer in memory, written to temp WAV file on stop
 - Max recording duration: 60 seconds (dictation tool, not transcription app)
-- Device change handling: `AVAudioEngine` notification for device removal → cancel recording, show error
-- Device selection: if user picks a specific device in Settings, the app temporarily switches the system default input device before recording and restores it after. This is necessary because `AVAudioEngine.inputNode` always uses the system default input device, which may be an aggregate device (e.g. 17-channel BlackHole mix) that doesn't capture the actual microphone.
+- Session startup runs off the main thread; sample conversion and PCM accumulation are serialized
+- Device selection does not mutate the system default. This avoids aggregate-device channel maps and prevents recording from changing other applications' audio configuration.
 
 Temp WAV file location: `NSTemporaryDirectory()`. Deleted after transcription completes or on app quit.
 
 ### 4. ASR Bridge Client
 
-Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
+Manages the embedded `mlx-qwen3-asr` bridge subprocess via JSONL protocol.
 
 **Startup** (at app launch):
 1. Launch the configured `start_asr_bridge.py` with `--model <local-model-path> --local-files-only`
@@ -113,9 +114,10 @@ Manages the `qwen3-asr-mlx-runtime` subprocess via JSONL protocol.
 - Transcript timeout (>15s): show timeout error, kill and restart bridge.
 - stdout is for JSONL only. stderr is drained to a bounded in-memory diagnostic buffer (last 50 lines). Any non-JSON line on stdout is skipped, not fatal.
 
-**Bridge script**: this repo owns a thin launch script at `scripts/start_asr_bridge.py` that imports `qwen3-asr-mlx-runtime` and exposes the JSONL protocol. The external runtime must be installed by the user; this script is the adapter layer.
-
-**Versioning**: the adapter targets `qwen3-asr-mlx-runtime` protocol `qwen3-asr-mlx-jsonl-v1`. Runtime installation and pinning remain user-managed and do not add a fourth setting.
+**Bridge script**: `SetupRunner` writes a Swift-embedded Python script to
+`~/.maclocalasr/start_asr_bridge.py`. It imports `mlx_qwen3_asr`, loads the model
+once, and exposes the app's small JSONL protocol. The app owns both sides of this
+protocol.
 
 ### 5. TextOutputManager
 
@@ -158,7 +160,7 @@ A minimal HTTP server on `localhost:17844` that allows external tools (curl, CI 
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/status` | GET | Returns JSON: `phase`, `configured`, `ready`, `lastTranscript`, `setupProgress` |
+| `/status` | GET | Returns JSON: `phase`, `configured`, `ready`, `audioLevel`, `lastTranscript`, `setupProgress` |
 | `/setup` | GET | Triggers `SetupRunner.runSetup()` asynchronously |
 | `/toggle` | GET | Triggers `AppState.toggleRecording()` |
 | `/settings` | GET | Opens the Settings window |
@@ -169,7 +171,7 @@ Socket I/O runs on a background `Thread`; MainActor calls are dispatched via `Di
 
 ### Why subprocess, not in-process MLX?
 
-The `qwen3-asr-mlx-runtime` is a Python project. Bridging Python+MLX into Swift directly requires PyObjC or a C bridge, both fragile. A subprocess with JSONL protocol is clean, debuggable, and lets the Python runtime own its memory lifecycle. The model loads once and stays resident — subprocess startup cost is paid once at app launch.
+`mlx-qwen3-asr` is a Python package. Bridging Python+MLX into Swift directly requires PyObjC or a C bridge, both fragile. A subprocess with JSONL protocol is clean, debuggable, and lets the Python runtime own its memory lifecycle. The model loads once and stays resident — subprocess startup cost is paid once at app launch.
 
 ### Why no VAD?
 

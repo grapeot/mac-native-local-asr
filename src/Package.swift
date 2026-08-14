@@ -32,6 +32,11 @@ let package = Package(
                     "-Xlinker", "MacLocalASR/Info.plist"
                 ])
             ]
+        ),
+        .testTarget(
+            name: "MacLocalASRTests",
+            dependencies: ["MacLocalASR"],
+            path: "Tests/MacLocalASRTests"
         )
     ]
 )

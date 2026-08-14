@@ -11,7 +11,9 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TEST_AUDIO="/tmp/maclocalasr_test.wav"
 
 cleanup() {
-    pkill -f MacLocalASR 2>/dev/null || true
+    if [ -n "${APP_PID:-}" ]; then
+        kill "$APP_PID" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -24,11 +26,12 @@ ffmpeg -y -i /tmp/maclocalasr_test.aiff -ar 24000 -ac 1 -acodec pcm_s16le "$TEST
 echo "Test audio: $TEST_AUDIO ($(du -h "$TEST_AUDIO" | cut -f1))"
 
 echo "=== 3. Launch app ==="
-# Kill any lingering process
-pkill -9 -f MacLocalASR 2>/dev/null || true
-sleep 1
+if lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $PORT is already in use. Quit the running app or use tests/live_audio.sh."
+    exit 1
+fi
 
-swift run --package-path "$REPO_ROOT/src" MacLocalASR 2>/tmp/maclocalasr_e2e_stderr.log &
+"$REPO_ROOT/src/.build/debug/MacLocalASR" 2>/tmp/maclocalasr_e2e_stderr.log &
 APP_PID=$!
 echo "App PID: $APP_PID"
 sleep 4
@@ -60,11 +63,15 @@ echo "=== 7. Test transcription via direct bridge call ==="
 # Direct test: send the test WAV to the bridge process
 VENV_PYTHON="$HOME/.maclocalasr/.venv/bin/python"
 BRIDGE="$HOME/.maclocalasr/start_asr_bridge.py"
-echo "{\"type\": \"start\"}" | "$VENV_PYTHON" "$BRIDGE" --model "Qwen/Qwen3-ASR-1.7B" 2>/tmp/maclocalasr_bridge_stderr.log <<EOF
+BRIDGE_OUTPUT=$("$VENV_PYTHON" "$BRIDGE" --model "Qwen/Qwen3-ASR-1.7B" 2>/tmp/maclocalasr_bridge_stderr.log <<EOF
 {"type": "start"}
 {"type": "transcribe", "audio_path": "$TEST_AUDIO"}
 {"type": "stop"}
 EOF
+)
+echo "$BRIDGE_OUTPUT"
+echo "$BRIDGE_OUTPUT" | grep -q '"type": "transcript"' || { echo "Bridge returned no transcript"; exit 1; }
+echo "$BRIDGE_OUTPUT" | grep -qi 'test\|speech\|recognition' || { echo "Transcript did not match the fixture"; exit 1; }
 
 echo "=== 8. Check bridge stderr for ffmpeg errors ==="
 if grep -qi "ffmpeg" /tmp/maclocalasr_bridge_stderr.log; then

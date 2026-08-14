@@ -2,7 +2,7 @@
 
 ## Project Role
 
-A macOS menu bar app for offline voice-to-text using local MLX speech recognition (Qwen3-ASR-1.7B). Public GitHub repo. Not a web service, not an iOS app — a native macOS app built with SwiftUI and AVAudioEngine.
+A macOS menu bar app for offline voice-to-text using local MLX speech recognition (Qwen3-ASR-1.7B). Public GitHub repo. Not a web service, not an iOS app — a native macOS app built with SwiftUI and AVFoundation.
 
 ## Language
 
@@ -54,7 +54,7 @@ Every change must be verified via ControlServer before commit. Do not hand off t
 
 1. **Menu bar app, not window app** — `MenuBarExtra` with `.menu` style in SwiftUI. No dock icon.
 2. **Toggle hotkey only** — press to start recording, press again to stop. No VAD, no push-to-talk.
-3. **AVAudioEngine + AVAudioConverter** — macOS-native audio capture with explicit conversion to 24kHz Int16 mono.
+3. **AVCaptureSession + AVAudioConverter** — select the physical input directly, then explicitly convert its native PCM format to 24kHz Int16 mono.
 4. **mlx-qwen3-asr via subprocess** — JSONL protocol, model stays resident, single WAV file per utterance. Auto-installed by SetupRunner, no user path config.
 5. **Clipboard-only text output** — write to NSPasteboard, user pastes manually with ⌘V. No simulated keystrokes, no Accessibility permission.
 6. **No LLM post-processing in MVP** — Qwen3-ASR-1.7B includes punctuation. LLM cleanup is Phase 2.

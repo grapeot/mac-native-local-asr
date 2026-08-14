@@ -1,28 +1,26 @@
 @preconcurrency import AVFoundation
 import Foundation
 
-final class AudioCaptureManager: @unchecked Sendable {
+final class AudioCaptureManager: NSObject, @unchecked Sendable {
     static let sampleRate = 24_000.0
     static let maximumDuration: TimeInterval = 60
 
     var onMaximumDuration: (() -> Void)?
-    var onDeviceUnavailable: (() -> Void)?
     var onAudioLevel: ((Float) -> Void)?
 
-    private let engine = AVAudioEngine()
+    var selectedDeviceID: String?
+
     private let queue = DispatchQueue(label: "MacLocalASR.AudioCapture")
-    private var converter: AVAudioConverter?
-    private var downmixConverter: AVAudioConverter?
-    private var outputFormat: AVAudioFormat?
-    private var monoFormat: AVAudioFormat?
+    private let sessionQueue = DispatchQueue(label: "MacLocalASR.CaptureSession")
+    private let sampleBufferQueue = DispatchQueue(label: "MacLocalASR.CaptureOutput")
     private var pcmData = Data()
     private var maximumDurationTask: Task<Void, Never>?
-    private var deviceObserver: NSObjectProtocol?
     private var isRecording = false
-    private var previousDeviceUID: String?
-    var selectedDeviceID: String?  // nil = system default
+    private var captureSession: AVCaptureSession?
+    private var audioOutput: AVCaptureAudioDataOutput?
+    private var converter: AVAudioConverter?
+    private var outputFormat: AVAudioFormat?
 
-    // List available audio input devices
     static func listInputDevices() -> [(id: String, name: String)] {
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.microphone, .external],
@@ -30,86 +28,6 @@ final class AudioCaptureManager: @unchecked Sendable {
             position: .unspecified
         )
         return discovery.devices.map { ($0.uniqueID, $0.localizedName) }
-    }
-
-    // Set system default input device by uniqueID
-    static func setDefaultInputDevice(uniqueID: String) {
-        var deviceUID = uniqueID as CFString
-        var size = UInt32(MemoryLayout<CFString>.size)
-        var propertyID = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        // First get the current device ID to restore later
-        // Then set the new one
-        var deviceID = AudioDeviceID(0)
-        var deviceIDSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyID, 0, nil, &deviceIDSize, &deviceID)
-
-        // Find device by UID
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var devicesCount = UInt32(0)
-        var devicesDataSize = UInt32(0)
-        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &devicesDataSize)
-        devicesCount = devicesDataSize / UInt32(MemoryLayout<AudioDeviceID>.size)
-        var devices = [AudioDeviceID](repeating: 0, count: Int(devicesCount))
-        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &devicesDataSize, &devices)
-
-        for device in devices {
-            var uid: CFString = "" as CFString
-            var uidSize = UInt32(MemoryLayout<CFString>.size)
-            var uidProperty = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyDeviceUID,
-                mScope: kAudioObjectPropertyScopeGlobal,
-                mElement: kAudioObjectPropertyElementMain
-            )
-            if AudioObjectGetPropertyData(device, &uidProperty, 0, nil, &uidSize, &uid) == noErr {
-                if (uid as String) == uniqueID {
-                    var newDeviceID = device
-                    AudioObjectSetPropertyData(
-                        AudioObjectID(kAudioObjectSystemObject),
-                        &propertyID,
-                        0, nil,
-                        UInt32(MemoryLayout<AudioDeviceID>.size),
-                        &newDeviceID
-                    )
-                    return
-                }
-            }
-        }
-    }
-
-    static func getDefaultInputDeviceUID() -> String? {
-        var propertyID = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceID = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyID, 0, nil, &size, &deviceID) == noErr else {
-            return nil
-        }
-        var uid: CFString = "" as CFString
-        var uidSize = UInt32(MemoryLayout<CFString>.size)
-        var uidProperty = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectGetPropertyData(deviceID, &uidProperty, 0, nil, &uidSize, &uid) == noErr else {
-            return nil
-        }
-        return uid as String
-    }
-
-    deinit {
-        removeDeviceListener()
     }
 
     func startRecording() async throws {
@@ -123,30 +41,27 @@ final class AudioCaptureManager: @unchecked Sendable {
         }
         guard shouldStart else { return }
 
-        // Switch to selected device if specified
-        if let deviceID = selectedDeviceID, !deviceID.isEmpty {
-            previousDeviceUID = Self.getDefaultInputDeviceUID()
-            Self.setDefaultInputDevice(uniqueID: deviceID)
-            // Give the system a moment to switch
-            try? await Task.sleep(for: .milliseconds(200))
-        }
+        let session = AVCaptureSession()
 
-        // Re-create engine to pick up the new default device
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        // Find the selected device or use default
+        var device: AVCaptureDevice?
+        if let deviceID = selectedDeviceID, !deviceID.isEmpty {
+            device = AVCaptureDevice(uniqueID: deviceID)
+        }
+        if device == nil {
+            device = AVCaptureDevice.default(for: .audio)
+        }
+        guard let device else {
             throw AudioCaptureError.noInputDevice
         }
-        // Create an intermediate mono format at the input sample rate, then convert to 24kHz
-        // This handles multi-channel aggregate devices by downmixing to mono first
-        guard let monoInputFormat = AVAudioFormat(
-            commonFormat: inputFormat.commonFormat,
-            sampleRate: inputFormat.sampleRate,
-            channels: 1,
-            interleaved: inputFormat.isInterleaved
-        ) else {
-            throw AudioCaptureError.converterUnavailable
-        }
+
+        let input = try AVCaptureDeviceInput(device: device)
+        session.addInput(input)
+
+        let output = AVCaptureAudioDataOutput()
+        session.addOutput(output)
+        audioOutput = output
+
         guard let destinationFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: Self.sampleRate,
@@ -155,40 +70,36 @@ final class AudioCaptureManager: @unchecked Sendable {
         ) else {
             throw AudioCaptureError.converterUnavailable
         }
-        // First converter: multi-channel → mono at input sample rate
-        // Second converter: mono at input rate → mono Int16 at 24kHz
-        let downmixConverter = AVAudioConverter(from: inputFormat, to: monoInputFormat)
-        let rateConverter = AVAudioConverter(from: monoInputFormat, to: destinationFormat)
-        guard let newConverter = rateConverter,
-              let newDownmix = downmixConverter else {
-            throw AudioCaptureError.converterUnavailable
-        }
-
         queue.sync {
-            self.pcmData.removeAll(keepingCapacity: true)
-            self.converter = newConverter
-            self.downmixConverter = newDownmix
-            self.outputFormat = destinationFormat
-            self.monoFormat = monoInputFormat
+            pcmData.removeAll(keepingCapacity: true)
+            converter = nil
+            outputFormat = destinationFormat
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 4_096, format: inputFormat) { [weak self] buffer, _ in
-            self?.convertAndAppend(buffer)
-        }
+        output.setSampleBufferDelegate(self, queue: sampleBufferQueue)
 
-        do {
-            engine.prepare()
-            try engine.start()
-            queue.sync { isRecording = true }
-            installDeviceListener()
-            maximumDurationTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(Self.maximumDuration))
-                guard !Task.isCancelled else { return }
-                self?.onMaximumDuration?()
+        captureSession = session
+        await withCheckedContinuation { continuation in
+            sessionQueue.async {
+                session.startRunning()
+                continuation.resume()
             }
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            throw AudioCaptureError.engineStartFailed(error.localizedDescription)
+        }
+        guard session.isRunning else {
+            captureSession = nil
+            audioOutput = nil
+            queue.sync {
+                converter = nil
+                outputFormat = nil
+            }
+            throw AudioCaptureError.engineStartFailed("Audio capture session did not start")
+        }
+        queue.sync { isRecording = true }
+
+        maximumDurationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.maximumDuration))
+            guard !Task.isCancelled else { return }
+            self?.onMaximumDuration?()
         }
     }
 
@@ -203,7 +114,11 @@ final class AudioCaptureManager: @unchecked Sendable {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("MacLocalASR-\(UUID().uuidString)")
             .appendingPathExtension("wav")
-        try makeWAV(from: data).write(to: url, options: .atomic)
+        try PCM16WAVEncoder.makeWAV(
+            from: data,
+            sampleRate: UInt32(Self.sampleRate),
+            channels: 1
+        ).write(to: url, options: .atomic)
         return url
     }
 
@@ -219,121 +134,14 @@ final class AudioCaptureManager: @unchecked Sendable {
     private func stopEngine() {
         maximumDurationTask?.cancel()
         maximumDurationTask = nil
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        captureSession?.stopRunning()
+        captureSession = nil
+        audioOutput = nil
         queue.sync {
             converter = nil
-            downmixConverter = nil
             outputFormat = nil
-            monoFormat = nil
             isRecording = false
         }
-        // Restore previous default input device
-        if let prevUID = previousDeviceUID {
-            Self.setDefaultInputDevice(uniqueID: prevUID)
-            previousDeviceUID = nil
-        }
-    }
-
-    private func convertAndAppend(_ inputBuffer: AVAudioPCMBuffer) {
-        let activeDownmix: AVAudioConverter? = queue.sync { downmixConverter }
-        let activeMono: AVAudioFormat? = queue.sync { monoFormat }
-        let activeConverter: AVAudioConverter? = queue.sync { converter }
-        let activeFormat: AVAudioFormat? = queue.sync { outputFormat }
-
-        guard let outputFormat = activeFormat, let finalConverter = activeConverter else { return }
-
-        // Step 1: Downmix multi-channel to mono if needed
-        let monoBuffer: AVAudioPCMBuffer
-        if let downmix = activeDownmix, let monoFmt = activeMono, inputBuffer.format.channelCount > 1 {
-            let monoCapacity = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength)))
-            guard let mb = AVAudioPCMBuffer(pcmFormat: monoFmt, frameCapacity: monoCapacity) else { return }
-            let downmixState = ConverterInputState()
-            var downmixError: NSError?
-            let downmixStatus = downmix.convert(to: mb, error: &downmixError) { _, inputStatus in
-                if downmixState.wasSupplied {
-                    inputStatus.pointee = .noDataNow
-                    return nil
-                }
-                downmixState.wasSupplied = true
-                inputStatus.pointee = .haveData
-                return inputBuffer
-            }
-            guard downmixError == nil, downmixStatus != .error, mb.frameLength > 0 else { return }
-            monoBuffer = mb
-        } else {
-            monoBuffer = inputBuffer
-        }
-
-        // Step 2: Convert mono at input rate to mono Int16 at 24kHz
-        let ratio = outputFormat.sampleRate / monoBuffer.format.sampleRate
-        let capacity = AVAudioFrameCount(ceil(Double(monoBuffer.frameLength) * ratio)) + 1
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-            return
-        }
-
-        let inputState = ConverterInputState()
-        var conversionError: NSError?
-        let status = finalConverter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
-            if inputState.wasSupplied {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            inputState.wasSupplied = true
-            inputStatus.pointee = .haveData
-            return monoBuffer
-        }
-
-        guard conversionError == nil,
-              status != .error,
-              outputBuffer.frameLength > 0,
-              let audioBuffer = outputBuffer.audioBufferList.pointee.mBuffers.mData else {
-            return
-        }
-
-        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
-        let chunk = Data(bytes: audioBuffer, count: byteCount)
-
-        // Compute RMS audio level for UI feedback
-        let level: Float = {
-            guard byteCount > 0 else { return 0 }
-            var sumSquares: Float = 0
-            let sampleCount = byteCount / MemoryLayout<Int16>.size
-            audioBuffer.withMemoryRebound(to: Int16.self, capacity: sampleCount) { ptr in
-                for i in 0..<sampleCount {
-                    let s = Float(ptr[i]) / 32768.0
-                    sumSquares += s * s
-                }
-            }
-            let rms = sqrt(sumSquares / Float(max(sampleCount, 1)))
-            let db = 20 * log10(max(rms, 1e-7))
-            let normalized = Float(max(0, min(1, (db + 50) / 40)))
-            return normalized
-        }()
-        onAudioLevel?(level)
-
-        queue.sync {
-            pcmData.append(chunk)
-        }
-    }
-
-    private func makeWAV(from pcm: Data) -> Data {
-        var data = Data()
-        data.appendASCII("RIFF")
-        data.appendLittleEndian(UInt32(36 + pcm.count))
-        data.appendASCII("WAVE")
-        data.appendASCII("fmt ")
-        data.appendLittleEndian(UInt32(16))
-        data.appendLittleEndian(UInt16(1))
-        data.appendLittleEndian(UInt16(1))
-        data.appendLittleEndian(UInt32(Self.sampleRate))
-        data.appendLittleEndian(UInt32(Self.sampleRate * 2))
-        data.appendLittleEndian(UInt16(2))
-        data.appendLittleEndian(UInt16(16))
-        data.appendASCII("data")
-        data.appendLittleEndian(UInt32(pcm.count))
-        data.append(pcm)
-        return data
     }
 
     private func requestMicrophoneAccess() async -> Bool {
@@ -346,41 +154,87 @@ final class AudioCaptureManager: @unchecked Sendable {
             false
         }
     }
+}
 
-    private func installDeviceListener() {
-        guard deviceObserver == nil else { return }
-        deviceObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: engine,
-            queue: nil
-        ) { [weak self] _ in
-            guard let self else { return }
-            let recording = self.queue.sync { self.isRecording }
-            guard recording else { return }
-            self.onDeviceUnavailable?()
+extension AudioCaptureManager: AVCaptureAudioDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let destinationFormat: AVAudioFormat = queue.sync(execute: { outputFormat }),
+              let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription),
+              let inputFormat = AVAudioFormat(streamDescription: streamDescription) else {
+            return
         }
-    }
 
-    private func removeDeviceListener() {
-        guard let deviceObserver else { return }
-        NotificationCenter.default.removeObserver(deviceObserver)
-        self.deviceObserver = nil
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frameCount > 0,
+              let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: frameCount) else {
+            return
+        }
+        inputBuffer.frameLength = frameCount
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer,
+            at: 0,
+            frameCount: Int32(frameCount),
+            into: inputBuffer.mutableAudioBufferList
+        ) == noErr else {
+            return
+        }
+
+        let activeConverter: AVAudioConverter? = queue.sync {
+            if converter == nil || converter?.inputFormat != inputFormat {
+                converter = AVAudioConverter(from: inputFormat, to: destinationFormat)
+            }
+            return converter
+        }
+        guard let activeConverter else { return }
+
+        let ratio = destinationFormat.sampleRate / inputFormat.sampleRate
+        let outputCapacity = AVAudioFrameCount(ceil(Double(frameCount) * ratio)) + 1
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: destinationFormat,
+            frameCapacity: outputCapacity
+        ) else {
+            return
+        }
+
+        let inputState = ConverterInputState()
+        var conversionError: NSError?
+        let status = activeConverter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+            if inputState.wasSupplied {
+                inputStatus.pointee = .noDataNow
+                return nil
+            }
+            inputState.wasSupplied = true
+            inputStatus.pointee = .haveData
+            return inputBuffer
+        }
+        guard conversionError == nil,
+              status != .error,
+              outputBuffer.frameLength > 0,
+              let samples = outputBuffer.int16ChannelData?[0] else {
+            return
+        }
+
+        let sampleCount = Int(outputBuffer.frameLength)
+        var sumSquares: Float = 0
+        for index in 0..<sampleCount {
+            let sample = Float(samples[index]) / 32_768.0
+            sumSquares += sample * sample
+        }
+        let rms = sqrt(sumSquares / Float(max(sampleCount, 1)))
+        let decibels = 20 * log10(max(rms, 1e-7))
+        onAudioLevel?(max(0, min(1, (decibels + 80) / 70)))
+
+        let chunk = Data(bytes: samples, count: sampleCount * MemoryLayout<Int16>.size)
+        queue.sync {
+            guard isRecording else { return }
+            pcmData.append(chunk)
+        }
     }
 }
 
 private final class ConverterInputState: @unchecked Sendable {
     var wasSupplied = false
-}
-
-private extension Data {
-    mutating func appendASCII(_ value: String) {
-        append(value.data(using: .ascii)!)
-    }
-
-    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
-        var littleEndian = value.littleEndian
-        Swift.withUnsafeBytes(of: &littleEndian) { append(contentsOf: $0) }
-    }
 }
 
 enum AudioCaptureError: LocalizedError {

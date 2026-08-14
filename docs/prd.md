@@ -43,6 +43,6 @@ Power users who want voice dictation on macOS without depending on cloud service
 
 - macOS 14+ (SwiftUI MenuBarExtra requires Sonoma)
 - Apple Silicon only (MLX is Apple-specific)
-- qwen3-asr-mlx-runtime must be pre-installed by user
+- Python 3 is required for the self-contained setup; the app creates its own venv and installs `mlx-qwen3-asr`
 - Microphone permission required for recording
 - No Accessibility permission needed (clipboard-only output, no simulated keystrokes)

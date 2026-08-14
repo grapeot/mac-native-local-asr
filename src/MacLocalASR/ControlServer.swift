@@ -61,7 +61,9 @@ final class ControlServer: @unchecked Sendable {
 
         // Update snapshot periodically from main thread
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.updateSnapshot()
+            Task { @MainActor in
+                self?.updateSnapshot()
+            }
         }
 
         let t = Thread { [weak self] in
