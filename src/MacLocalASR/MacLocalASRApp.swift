@@ -15,11 +15,11 @@ struct MacLocalASRApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Settings {
+        WindowGroup("Settings", id: "settings") {
             SettingsView(appState: appState)
         }
-        .defaultSize(width: 520, height: 210)
         .windowResizability(.contentSize)
+        .defaultSize(width: 520, height: 240)
     }
 }
 
@@ -27,5 +27,14 @@ struct MacLocalASRApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Open settings on first launch if bridge is not configured
+        do {
+            _ = try SettingsStore.current()
+        } catch {
+            // Settings not configured — open the settings window
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+        }
     }
 }

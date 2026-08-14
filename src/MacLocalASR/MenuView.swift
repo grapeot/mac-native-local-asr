@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuView: View {
     @ObservedObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Label {
@@ -22,9 +23,7 @@ struct MenuView: View {
         Divider()
 
         Button(LocalizableStrings.settings) {
-            if #available(macOS 14, *) {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
+            openWindow(id: "settings")
             NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut(",")
