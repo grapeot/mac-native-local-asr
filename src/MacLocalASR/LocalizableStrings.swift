@@ -20,6 +20,8 @@ enum LocalizableStrings {
     static var close: String { tr("Close", "关闭") }
     static var browse: String { tr("Browse…", "浏览…") }
     static var notConfigured: String { tr("Not configured", "尚未配置") }
+    static var setup: String { tr("Setup…", "配置…") }
+    static var venvNotReady: String { tr("ASR not configured. Click Setup to install.", "ASR 未配置，点击配置以安装。") }
     static var bridgeNotConfigured: String { tr("ASR bridge not configured", "尚未配置 ASR 引擎") }
     static var bridgeNotFound: String { tr("ASR bridge was not found", "找不到 ASR 引擎") }
     static var modelNotConfigured: String { tr("Model path not set", "尚未设置模型路径") }

@@ -16,6 +16,8 @@ final class AppState: ObservableObject {
     @Published private(set) var lastTranscript = ""
     @Published private(set) var lastAction = ""
     @Published private(set) var isBridgeReady = false
+    @Published private(set) var isConfigured = false
+    @Published private(set) var setupProgress = ""
 
     private let audioCapture = AudioCaptureManager()
     private let bridgeClient = ASRBridgeClient()
@@ -43,7 +45,92 @@ final class AppState: ObservableObject {
         }
 
         Task {
+            await initialize()
+        }
+    }
+
+    func initialize() async {
+        isConfigured = SettingsStore.isConfigured()
+        if isConfigured {
             await startBridge()
+        } else {
+            phase = .error(LocalizableStrings.venvNotReady)
+        }
+    }
+
+    func runSetup() async {
+        setupProgress = "Starting setup…"
+        phase = .loading
+
+        let sysPython = "/usr/bin/env"
+
+        let process = Process()
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: sysPython)
+        process.arguments = ["python3", "scripts/setup.py"]
+        process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        // Find setup.py — bundled or in repo
+        let setupCandidates = [
+            Bundle.main.url(forResource: "setup", withExtension: "py"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("scripts/setup.py"),
+        ].compactMap { $0 }
+
+        guard let setupURL = setupCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            phase = .error("setup.py not found")
+            return
+        }
+
+        process.arguments = [setupURL.path]
+
+        do {
+            try process.run()
+        } catch {
+            phase = .error("Failed to start setup: \(error.localizedDescription)")
+            return
+        }
+
+        // Read stdout line by line for progress
+        let stdoutHandle = stdoutPipe.fileHandleForReading
+        while process.isRunning {
+            let data = stdoutHandle.availableData
+            if data.isEmpty { break }
+            if let text = String(data: data, encoding: .utf8) {
+                for line in text.split(separator: "\n") {
+                    if let jsonData = line.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: String] {
+                        if json["type"] == "progress" {
+                            await MainActor.run {
+                                setupProgress = json["message"] ?? ""
+                            }
+                        } else if json["type"] == "done" {
+                            await MainActor.run {
+                                setupProgress = ""
+                                isConfigured = true
+                            }
+                            process.waitUntilExit()
+                            await startBridge()
+                            return
+                        } else if json["type"] == "error" {
+                            await MainActor.run {
+                                phase = .error(json["message"] ?? "Setup failed")
+                            }
+                            return
+                        }
+                    }
+                }
+            }
+        }
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            await MainActor.run {
+                phase = .error("Setup failed with exit code \(process.terminationStatus)")
+            }
         }
     }
 
@@ -144,13 +231,16 @@ final class AppState: ObservableObject {
         do {
             let settings = try SettingsStore.current()
             try await bridgeClient.start(
-                bridgePath: settings.bridgePath,
-                modelPath: settings.modelPath
+                bridgePath: settings.bridgeScriptPath,
+                modelPath: settings.modelId,
+                venvPython: settings.venvPythonPath
             )
             isBridgeReady = true
+            isConfigured = true
             phase = .idle
         } catch {
             isBridgeReady = false
+            isConfigured = false
             showError(error.localizedDescription, returnsToIdle: false)
         }
     }

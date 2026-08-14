@@ -21,6 +21,15 @@ struct MenuView: View {
 
         Divider()
 
+        if !appState.isConfigured {
+            Button(LocalizableStrings.setup) {
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.showSettings()
+                }
+                Task { await appState.runSetup() }
+            }
+        }
+
         Button(LocalizableStrings.settings) {
             if let delegate = NSApp.delegate as? AppDelegate {
                 delegate.showSettings()

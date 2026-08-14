@@ -12,14 +12,16 @@ actor ASRBridgeClient {
     private var diagnosticLines: [String] = []
     private var bridgePath = ""
     private var modelPath = ""
+    private var venvPython = ""
     private var restartAttempts = 0
     private var stopping = false
 
     var ready: Bool { isReady }
 
-    func start(bridgePath: String, modelPath: String) async throws {
+    func start(bridgePath: String, modelPath: String, venvPython: String) async throws {
         self.bridgePath = bridgePath
         self.modelPath = modelPath
+        self.venvPython = venvPython
         restartAttempts = 0
         try await launchAndWaitUntilReady()
     }
@@ -60,23 +62,9 @@ actor ASRBridgeClient {
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        let bridgeURL = URL(fileURLWithPath: bridgePath)
-        let projectPython = bridgeURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(".venv/bin/python")
-        if FileManager.default.isExecutableFile(atPath: projectPython.path) {
-            process.executableURL = projectPython
-            process.arguments = [bridgePath, "--model", modelPath, "--local-files-only"]
-        } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [
-                "python3",
-                bridgePath,
-                "--model", modelPath,
-                "--local-files-only"
-            ]
-        }
+
+        process.executableURL = URL(fileURLWithPath: venvPython)
+        process.arguments = [bridgePath, "--model", modelPath, "--local-files-only"]
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe

@@ -4,67 +4,41 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
-    @AppStorage(SettingsStore.bridgePathKey) private var bridgePath = ""
-    @AppStorage(SettingsStore.modelPathKey) private var modelPath = ""
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Form {
-            KeyboardShortcuts.Recorder(LocalizableStrings.hotkey, name: .toggleRecording)
+            Section(LocalizableStrings.hotkey) {
+                KeyboardShortcuts.Recorder(LocalizableStrings.hotkey, name: .toggleRecording)
+            }
 
-            LabeledContent(LocalizableStrings.bridgePath) {
+            Section(LocalizableStrings.status) {
                 HStack {
-                    TextField(LocalizableStrings.bridgePath, text: $bridgePath)
-                    Button(LocalizableStrings.browse) {
-                        chooseBridge()
+                    Text(appState.modelStatusText)
+                    Spacer()
+                    if !appState.isConfigured {
+                        Button(LocalizableStrings.setup) {
+                            Task { await appState.runSetup() }
+                        }
                     }
+                }
+                if !appState.setupProgress.isEmpty {
+                    Text(appState.setupProgress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
-            LabeledContent(LocalizableStrings.modelPath) {
+            Section {
                 HStack {
-                    TextField(LocalizableStrings.modelPath, text: $modelPath)
-                    Button(LocalizableStrings.browse) {
-                        chooseModelDirectory()
+                    Spacer()
+                    Button(LocalizableStrings.close) {
+                        appState.restartBridge()
+                        NSApp.keyWindow?.close()
                     }
-                }
-            }
-
-            LabeledContent(LocalizableStrings.status) {
-                Text(appState.modelStatusText)
-                    .lineLimit(1)
-            }
-
-            HStack {
-                Spacer()
-                Button(LocalizableStrings.close) {
-                    appState.restartBridge()
-                    dismiss()
                 }
             }
         }
         .formStyle(.grouped)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func chooseBridge() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.pythonScript]
-        if panel.runModal() == .OK, let url = panel.url {
-            bridgePath = url.path
-        }
-    }
-
-    private func chooseModelDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            modelPath = url.path
-        }
+        .padding()
     }
 }
