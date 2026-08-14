@@ -3,7 +3,6 @@ import SwiftUI
 
 struct MenuView: View {
     @ObservedObject var appState: AppState
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Label {
@@ -23,8 +22,9 @@ struct MenuView: View {
         Divider()
 
         Button(LocalizableStrings.settings) {
-            openWindow(id: "settings")
-            NSApp.activate(ignoringOtherApps: true)
+            if let delegate = NSApp.delegate as? AppDelegate {
+                delegate.showSettings()
+            }
         }
         .keyboardShortcut(",")
 

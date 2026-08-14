@@ -4,7 +4,13 @@ import SwiftUI
 @main
 struct MacLocalASRApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var appState = AppState()
+    @StateObject private var appState: AppState
+
+    init() {
+        let state = AppState()
+        _appState = StateObject(wrappedValue: state)
+        appStateShared = state
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -14,27 +20,41 @@ struct MacLocalASRApp: App {
                 .foregroundStyle(appState.stateColor)
         }
         .menuBarExtraStyle(.menu)
-
-        WindowGroup("Settings", id: "settings") {
-            SettingsView(appState: appState)
-        }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 520, height: 240)
     }
 }
 
 @MainActor
+var appStateShared: AppState!
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var settingsWindow: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        // Open settings on first launch if bridge is not configured
+
+        // Auto-open settings on first launch if not configured
         do {
             _ = try SettingsStore.current()
         } catch {
-            // Settings not configured — open the settings window
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showSettings()
             }
         }
+    }
+
+    func showSettings() {
+        if settingsWindow == nil {
+            let hostingController = NSHostingController(rootView: SettingsView(appState: appStateShared))
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = LocalizableStrings.appName
+            window.styleMask = [.titled, .closable]
+            window.setContentSize(NSSize(width: 520, height: 280))
+            window.center()
+            window.isReleasedWhenClosed = false
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
