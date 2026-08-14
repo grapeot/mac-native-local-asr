@@ -14,6 +14,8 @@ enum LocalizableStrings {
     static var copiedToClipboard: String { tr("Copied to clipboard", "已复制到剪贴板") }
     static var microphoneAccessRequired: String { tr("Microphone access required", "需要麦克风权限") }
     static var hotkey: String { tr("Hotkey", "快捷键") }
+    static var inputDevice: String { tr("Input Device", "输入设备") }
+    static var systemDefault: String { tr("System Default", "系统默认") }
     static var bridgePath: String { tr("ASR Bridge Path", "ASR 引擎路径") }
     static var modelPath: String { tr("Model Path", "模型路径") }
     static var status: String { tr("Status", "状态") }

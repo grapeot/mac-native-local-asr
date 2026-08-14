@@ -24,6 +24,9 @@
 - Fixed mlx-qwen3-asr load_model API: package exposes `load_model(path_or_hf_repo, dtype)`, not `_model.load_model` with `local_files_only`
 - Verified full automated flow: curl /setup → venv created → pip install → bridge started → status shows configured:true, ready:true in ~10s
 - Documented ControlServer as business requirement in PRD, RFC, test.md, AGENTS.md
+- User reported no audio captured — AVAudioEngine default input was 17-channel aggregate device (BlackHole), not the Shure microphone
+- Added input device picker in Settings using AVCaptureDevice.DiscoverySession; AudioCaptureManager switches system default input device via Core Audio before recording and restores after
+- Verified E2E test still passes after device selection changes
 
 ## Lessons Learned
 
@@ -34,3 +37,4 @@
 - Swift 6 strict concurrency disallows `NSLock.lock()/unlock()` in async contexts — use `DispatchQueue.sync` instead.
 - Socket I/O (accept/read) blocks the thread — must run on a background `Thread`, not on MainActor. Otherwise `Task` dispatches from within the accept loop never execute.
 - **Automated testing is a business requirement.** A GUI-only app that requires manual clicking to verify creates a slow feedback loop. The ControlServer pattern (embedded HTTP server with /status, /setup, /toggle endpoints) lets AI agents and CI scripts test the full flow without human interaction. Every macOS app in this workspace should adopt this pattern.
+- **AVAudioEngine.inputNode always uses the system default input device on macOS.** If the user has an aggregate device (e.g. BlackHole + microphone mix) set as default, AVAudioEngine will capture from that multi-channel mix, not the actual microphone. Solution: use Core Audio `kAudioHardwarePropertyDefaultInputDevice` to temporarily switch the system default before recording, then restore after. This is what life_record's recording service does (via sounddevice's device selection).

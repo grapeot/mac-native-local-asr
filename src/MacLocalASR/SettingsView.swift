@@ -4,11 +4,22 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
+    @AppStorage(SettingsStore.deviceKey) private var deviceID = ""
+    @State private var devices: [(id: String, name: String)] = []
 
     var body: some View {
         Form {
             Section(LocalizableStrings.hotkey) {
                 KeyboardShortcuts.Recorder(LocalizableStrings.hotkey, name: .toggleRecording)
+            }
+
+            Section(LocalizableStrings.inputDevice) {
+                Picker(LocalizableStrings.inputDevice, selection: $deviceID) {
+                    Text(LocalizableStrings.systemDefault).tag("")
+                    ForEach(devices, id: \.id) { device in
+                        Text(device.name).tag(device.id)
+                    }
+                }
             }
 
             Section(LocalizableStrings.status) {
@@ -40,5 +51,8 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear {
+            devices = AudioCaptureManager.listInputDevices()
+        }
     }
 }

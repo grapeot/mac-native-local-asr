@@ -17,6 +17,94 @@ final class AudioCaptureManager: @unchecked Sendable {
     private var maximumDurationTask: Task<Void, Never>?
     private var deviceObserver: NSObjectProtocol?
     private var isRecording = false
+    private var previousDeviceUID: String?
+    var selectedDeviceID: String?  // nil = system default
+
+    // List available audio input devices
+    static func listInputDevices() -> [(id: String, name: String)] {
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        )
+        return discovery.devices.map { ($0.uniqueID, $0.localizedName) }
+    }
+
+    // Set system default input device by uniqueID
+    static func setDefaultInputDevice(uniqueID: String) {
+        var deviceUID = uniqueID as CFString
+        var size = UInt32(MemoryLayout<CFString>.size)
+        var propertyID = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        // First get the current device ID to restore later
+        // Then set the new one
+        var deviceID = AudioDeviceID(0)
+        var deviceIDSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyID, 0, nil, &deviceIDSize, &deviceID)
+
+        // Find device by UID
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var devicesCount = UInt32(0)
+        var devicesDataSize = UInt32(0)
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &devicesDataSize)
+        devicesCount = devicesDataSize / UInt32(MemoryLayout<AudioDeviceID>.size)
+        var devices = [AudioDeviceID](repeating: 0, count: Int(devicesCount))
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &devicesDataSize, &devices)
+
+        for device in devices {
+            var uid: CFString = "" as CFString
+            var uidSize = UInt32(MemoryLayout<CFString>.size)
+            var uidProperty = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectGetPropertyData(device, &uidProperty, 0, nil, &uidSize, &uid) == noErr {
+                if (uid as String) == uniqueID {
+                    var newDeviceID = device
+                    AudioObjectSetPropertyData(
+                        AudioObjectID(kAudioObjectSystemObject),
+                        &propertyID,
+                        0, nil,
+                        UInt32(MemoryLayout<AudioDeviceID>.size),
+                        &newDeviceID
+                    )
+                    return
+                }
+            }
+        }
+    }
+
+    static func getDefaultInputDeviceUID() -> String? {
+        var propertyID = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyID, 0, nil, &size, &deviceID) == noErr else {
+            return nil
+        }
+        var uid: CFString = "" as CFString
+        var uidSize = UInt32(MemoryLayout<CFString>.size)
+        var uidProperty = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(deviceID, &uidProperty, 0, nil, &uidSize, &uid) == noErr else {
+            return nil
+        }
+        return uid as String
+    }
 
     deinit {
         removeDeviceListener()
@@ -33,6 +121,15 @@ final class AudioCaptureManager: @unchecked Sendable {
         }
         guard shouldStart else { return }
 
+        // Switch to selected device if specified
+        if let deviceID = selectedDeviceID, !deviceID.isEmpty {
+            previousDeviceUID = Self.getDefaultInputDeviceUID()
+            Self.setDefaultInputDevice(uniqueID: deviceID)
+            // Give the system a moment to switch
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+
+        // Re-create engine to pick up the new default device
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -106,6 +203,11 @@ final class AudioCaptureManager: @unchecked Sendable {
             converter = nil
             outputFormat = nil
             isRecording = false
+        }
+        // Restore previous default input device
+        if let prevUID = previousDeviceUID {
+            Self.setDefaultInputDevice(uniqueID: prevUID)
+            previousDeviceUID = nil
         }
     }
 

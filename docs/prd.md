@@ -35,7 +35,7 @@ Power users who want voice dictation on macOS without depending on cloud service
 - [ ] Model loads once at app startup and stays resident for the session
 - [ ] Quitting the app releases the model and frees memory
 - [ ] First-run setup is self-contained: user clicks "Setup", app auto-creates venv, installs mlx-qwen3-asr, starts bridge — no path entry
-- [ ] Settings window is resizable and shows hotkey recorder + setup status
+- [ ] Settings window is resizable and shows hotkey recorder, input device picker, and setup status
 - [ ] Bilingual UI (English/Chinese) following system locale
 - [ ] App is testable end-to-end from command line via HTTP control server (localhost:17844) without GUI interaction
 

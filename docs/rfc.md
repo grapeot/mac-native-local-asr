@@ -79,12 +79,13 @@ Uses the `KeyboardShortcuts` SPM package. Default: ⌘⇧Space. User-configurabl
 
 `AVAudioEngine` with `installTap(onBus:0, bufferSize:4096, format:)`.
 
-- Input: default input device (user changes via System Settings)
+- Input: default input device or user-selected device via Core Audio device switching
 - Input format: whatever the device provides (commonly 44.1/48kHz, Float32, stereo or mono)
 - Conversion: `AVAudioConverter` to transform to 24kHz, Int16, mono PCM
 - Output: accumulated PCM buffer in memory, written to temp WAV file on stop
 - Max recording duration: 60 seconds (dictation tool, not transcription app)
 - Device change handling: `AVAudioEngine` notification for device removal → cancel recording, show error
+- Device selection: if user picks a specific device in Settings, the app temporarily switches the system default input device before recording and restores it after. This is necessary because `AVAudioEngine.inputNode` always uses the system default input device, which may be an aggregate device (e.g. 17-channel BlackHole mix) that doesn't capture the actual microphone.
 
 Temp WAV file location: `NSTemporaryDirectory()`. Deleted after transcription completes or on app quit.
 
@@ -132,8 +133,9 @@ Persisted via `@AppStorage` (UserDefaults):
 
 - `hotkey` — global hotkey combo (default: ⌘⇧Space)
 - `asrModelId` — HuggingFace model ID (default: `Qwen/Qwen3-ASR-1.7B`)
+- `audioInputDeviceID` — selected input device uniqueID (default: empty = system default)
 
-Two user-visible settings. The venv path (`~/.maclocalasr/.venv`), bridge script path (`~/.maclocalasr/start_asr_bridge.py`), and model ID are managed automatically by `SetupRunner` — the user never types paths.
+Three user-visible settings. The venv path, bridge script path, and model ID are managed automatically by `SetupRunner` — the user never types paths. The input device picker lets users select a specific microphone (e.g. Shure MVX2U) instead of the system default (which may be an aggregate device with wrong channels).
 
 ### 7. SetupRunner
 

@@ -187,6 +187,7 @@ final class AppState: ObservableObject {
 
         do {
             let settings = try SettingsStore.current()
+            audioCapture.selectedDeviceID = settings.deviceID?.isEmpty == false ? settings.deviceID : nil
             try await bridgeClient.start(
                 bridgePath: settings.bridgeScriptPath,
                 modelPath: settings.modelId,

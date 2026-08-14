@@ -2,11 +2,13 @@ import Foundation
 
 struct SettingsStore {
     static let modelPathKey = "asrModelId"
+    static let deviceKey = "audioInputDeviceID"
     static let defaultModelId = "Qwen/Qwen3-ASR-1.7B"
 
     let venvPythonPath: String
     let bridgeScriptPath: String
     let modelId: String
+    let deviceID: String?
 
     static func current(defaults: UserDefaults = .standard) throws -> SettingsStore {
         let venvPythonPath = SetupRunner.venvPython.path
@@ -20,7 +22,8 @@ struct SettingsStore {
         }
 
         let modelId = defaults.string(forKey: modelPathKey) ?? defaultModelId
-        return SettingsStore(venvPythonPath: venvPythonPath, bridgeScriptPath: bridgeScriptPath, modelId: modelId)
+        let deviceID = defaults.string(forKey: deviceKey)
+        return SettingsStore(venvPythonPath: venvPythonPath, bridgeScriptPath: bridgeScriptPath, modelId: modelId, deviceID: deviceID)
     }
 
     static func isConfigured() -> Bool {
