@@ -29,9 +29,13 @@ var appStateShared: AppState!
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
+    private let controlServer = ControlServer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        // Start control server for automated testing
+        controlServer.start(appState: appStateShared)
 
         // Auto-open settings on first launch if not configured
         if !SettingsStore.isConfigured() {
@@ -46,8 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: SettingsView(appState: appStateShared))
             let window = NSWindow(contentViewController: hostingController)
             window.title = LocalizableStrings.appName
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 520, height: 280))
+            window.minSize = NSSize(width: 400, height: 200)
             window.center()
             window.isReleasedWhenClosed = false
             settingsWindow = window
