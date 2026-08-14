@@ -2,7 +2,7 @@
 
 ## Core Principle: Automated Testing via ControlServer
 
-The app must be testable end-to-end from the command line without GUI interaction. A built-in HTTP control server (`localhost:17843`) exposes state queries and action triggers. This is a business requirement, not a convenience — every change to the app must be verifiable by `curl` before handing off to a human.
+The app must be testable end-to-end from the command line without GUI interaction. A built-in HTTP control server (`localhost:17844`) exposes state queries and action triggers. This is a business requirement, not a convenience — every change to the app must be verifiable by `curl` before handing off to a human.
 
 ## ControlServer Endpoints
 
@@ -27,22 +27,22 @@ APP_PID=$!
 sleep 3
 
 # 3. Verify initial state (unconfigured on first run)
-curl -sf http://127.0.0.1:17843/status | grep '"configured":false'
+curl -sf http://127.0.0.1:17844/status | grep '"configured":false'
 
 # 4. Trigger setup
-curl -sf http://127.0.0.1:17843/setup
+curl -sf http://127.0.0.1:17844/setup
 
 # 5. Poll until setup completes (venv + pip install + bridge start)
 for i in $(seq 1 60); do
     sleep 5
-    curl -sf http://127.0.0.1:17843/status | grep '"configured":true' && break
+    curl -sf http://127.0.0.1:17844/status | grep '"configured":true' && break
 done
 
 # 6. Verify bridge is ready
-curl -sf http://127.0.0.1:17843/status | grep '"ready":true'
+curl -sf http://127.0.0.1:17844/status | grep '"ready":true'
 
 # 7. (Optional) Toggle recording — requires microphone permission
-# curl -sf http://127.0.0.1:17843/toggle
+# curl -sf http://127.0.0.1:17844/toggle
 
 # 8. Cleanup
 kill $APP_PID

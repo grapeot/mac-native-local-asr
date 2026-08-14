@@ -152,7 +152,7 @@ Progress is reported via a callback to `AppState.setupProgress` for display in t
 
 ### 8. ControlServer (automated testing)
 
-A minimal HTTP server on `localhost:17843` that allows external tools (curl, CI scripts, AI agents) to query state and trigger actions without GUI interaction. This is a **business requirement**: the app must be testable end-to-end from the command line.
+A minimal HTTP server on `localhost:17844` that allows external tools (curl, CI scripts, AI agents) to query state and trigger actions without GUI interaction. This is a **business requirement**: the app must be testable end-to-end from the command line.
 
 | Endpoint | Method | Purpose |
 |---|---|---|

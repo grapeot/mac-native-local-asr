@@ -25,6 +25,8 @@ struct MacLocalASRApp: App {
 
 @MainActor
 var appStateShared: AppState!
+@MainActor
+var appDelegateShared: AppDelegate!
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -33,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        appDelegateShared = self
 
         // Start control server for automated testing
         controlServer.start(appState: appStateShared)

@@ -19,7 +19,8 @@
 - User reported "setup.py not found" — rewrote setup as native Swift SetupRunner with bridge script embedded as string literal, no external file dependency
 - User reported settings window not appearing — fixed with NSWindow + temporary activation policy switch to .regular
 - User reported settings window not resizable — added .resizable style mask
-- Added ControlServer (HTTP on localhost:17843) for automated end-to-end testing via curl
+- Added ControlServer (HTTP on localhost:17844) for automated end-to-end testing via curl
+- Fixed ControlServer deadlock: replaced DispatchQueue.main.sync with periodic Timer-based state snapshot, so background thread never blocks on main
 - Fixed mlx-qwen3-asr load_model API: package exposes `load_model(path_or_hf_repo, dtype)`, not `_model.load_model` with `local_files_only`
 - Verified full automated flow: curl /setup → venv created → pip install → bridge started → status shows configured:true, ready:true in ~10s
 - Documented ControlServer as business requirement in PRD, RFC, test.md, AGENTS.md

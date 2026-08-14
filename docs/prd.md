@@ -37,7 +37,7 @@ Power users who want voice dictation on macOS without depending on cloud service
 - [ ] First-run setup is self-contained: user clicks "Setup", app auto-creates venv, installs mlx-qwen3-asr, starts bridge — no path entry
 - [ ] Settings window is resizable and shows hotkey recorder + setup status
 - [ ] Bilingual UI (English/Chinese) following system locale
-- [ ] App is testable end-to-end from command line via HTTP control server (localhost:17843) without GUI interaction
+- [ ] App is testable end-to-end from command line via HTTP control server (localhost:17844) without GUI interaction
 
 ## Constraints
 
