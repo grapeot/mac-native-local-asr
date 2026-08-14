@@ -21,10 +21,7 @@ let package = Package(
             name: "MacLocalASR",
             dependencies: ["KeyboardShortcuts"],
             path: "MacLocalASR",
-            exclude: ["Info.plist"],
-            resources: [
-                .process("Resources")
-            ],
+            exclude: ["Info.plist", "Resources"],
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("AppKit"),
