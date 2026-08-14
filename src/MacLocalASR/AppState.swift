@@ -43,9 +43,6 @@ final class AppState: ObservableObject {
             }
         }
 
-        // Prompt for Accessibility once at startup so auto-paste works later
-        TextOutputManager.promptAccessibilityIfNeeded()
-
         Task {
             await startBridge()
         }
