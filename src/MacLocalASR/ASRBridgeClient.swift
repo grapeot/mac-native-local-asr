@@ -68,6 +68,15 @@ actor ASRBridgeClient {
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        // Ensure homebrew paths are in PATH so ffmpeg is findable
+        var env = ProcessInfo.processInfo.environment
+        let extraPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/homebrew/sbin", "/usr/local/sbin"]
+        let existingPath = env["PATH"] ?? ""
+        let missing = extraPaths.filter { !existingPath.contains($0) }
+        if !missing.isEmpty {
+            env["PATH"] = (missing + [existingPath]).joined(separator: ":")
+        }
+        process.environment = env
         process.terminationHandler = { [weak self, weak process] _ in
             guard let process else { return }
             Task { await self?.processTerminated(process) }
