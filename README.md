@@ -1,5 +1,7 @@
 # Mac Native Local ASR App
 
+[![CI](https://github.com/grapeot/mac-native-local-asr/actions/workflows/ci.yml/badge.svg)](https://github.com/grapeot/mac-native-local-asr/actions/workflows/ci.yml)
+
 A macOS menu bar app for offline voice-to-text using local MLX-accelerated speech recognition. Press a global hotkey, speak, and your words are copied to the clipboard — no internet required.
 
 ## What it does
