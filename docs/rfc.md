@@ -96,7 +96,7 @@ Manages the embedded `mlx-qwen3-asr` bridge subprocess via JSONL protocol.
 
 **Startup** (at app launch):
 1. Launch the configured `start_asr_bridge.py` with `--model <local-model-path> --local-files-only`
-2. Send `{"type":"start"}` → wait for `{"type":"ready"}` (timeout: 30s for model load)
+2. Send `{"type":"start"}` → wait for `{"type":"ready"}` (timeout: 120s for cold model load)
 3. State → `idle`
 
 **Transcription** (per utterance):
@@ -145,10 +145,11 @@ Runs on first launch (or when the user clicks "Setup…" in Settings or the menu
 
 1. Find system Python 3 (`/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, `/usr/bin/python3`)
 2. Create venv at `~/.maclocalasr/.venv`
-3. `pip install mlx-qwen3-asr` into the venv
+3. Install the tested `mlx-qwen3-asr==0.3.5` into the venv
 4. Verify `import mlx_qwen3_asr` succeeds
-5. Write the embedded bridge script to `~/.maclocalasr/start_asr_bridge.py`
-6. On completion, the app auto-starts the ASR bridge
+5. Download the Qwen3-ASR-1.7B snapshot while setup is explicitly online
+6. Write the embedded bridge script to `~/.maclocalasr/start_asr_bridge.py`
+7. On completion, start the bridge with `--local-files-only`
 
 The bridge script content is embedded as a Swift string literal — no external file dependency. This eliminates "file not found" errors regardless of how the app is launched (swift run, Xcode, .app bundle).
 
@@ -156,7 +157,7 @@ Progress is reported via a callback to `AppState.setupProgress` for display in t
 
 ### 8. ControlServer (automated testing)
 
-A minimal HTTP server on `localhost:17844` that allows external tools (curl, CI scripts, AI agents) to query state and trigger actions without GUI interaction. This is a **business requirement**: the app must be testable end-to-end from the command line.
+A minimal HTTP server on `localhost:17844` allows external tools (curl, CI scripts, AI agents) to query state and trigger actions without GUI interaction. It starts only when the executable receives `--enable-control-server`. Normal app launches do not open the port, preventing websites or unrelated local processes from invoking test actions or reading the last transcript.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -165,7 +166,7 @@ A minimal HTTP server on `localhost:17844` that allows external tools (curl, CI 
 | `/toggle` | GET | Triggers `AppState.toggleRecording()` |
 | `/settings` | GET | Opens the Settings window |
 
-Socket I/O runs on a background `Thread`; MainActor calls are dispatched via `DispatchQueue.main`. The server binds to `127.0.0.1` only — no external access.
+Socket I/O runs on a background `Thread`; MainActor calls are dispatched via `DispatchQueue.main`. The server binds to `127.0.0.1` and remains a test-only interface enabled by an explicit launch flag.
 
 ## Key Design Decisions
 
@@ -196,7 +197,7 @@ LLM post-processing adds a dependency on another user-managed service (Ollama/LM
 ## Dependencies
 
 - **KeyboardShortcuts** (SPM, MIT) — global hotkey registration
-- **mlx-qwen3-asr** (pip, auto-installed by SetupRunner) — ASR backend
+- **mlx-qwen3-asr 0.3.5** (pip, pinned and auto-installed by SetupRunner) — ASR backend
 
 No other dependencies. No Ollama, no LM Studio, no ONNX Runtime in the MVP.
 

@@ -40,7 +40,7 @@ A macOS menu bar app for offline voice-to-text using local MLX speech recognitio
 swift build --package-path src
 
 # Automated test via ControlServer (no GUI needed)
-swift run --package-path src MacLocalASR &
+swift run --package-path src MacLocalASR --enable-control-server &
 sleep 3
 curl -sf http://127.0.0.1:17844/status   # check state
 curl -sf http://127.0.0.1:17844/setup    # trigger first-run setup
@@ -59,7 +59,7 @@ Every change must be verified via ControlServer before commit. Do not hand off t
 5. **Clipboard-only text output** — write to NSPasteboard, user pastes manually with ⌘V. No simulated keystrokes, no Accessibility permission.
 6. **No LLM post-processing in MVP** — Qwen3-ASR-1.7B includes punctuation. LLM cleanup is Phase 2.
 7. **Self-contained setup** — SetupRunner creates venv, installs mlx-qwen3-asr, writes bridge script. User clicks "Setup" once, no path entry.
-8. **ControlServer for automated testing** — HTTP server on localhost:17844 allows curl-based end-to-end testing without GUI. Business requirement.
+8. **Opt-in ControlServer for automated testing** — `--enable-control-server` starts the localhost:17844 test API. Normal launches do not open a listening socket.
 
 ## What NOT to do
 

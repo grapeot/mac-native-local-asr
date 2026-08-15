@@ -38,7 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         appDelegateShared = self
 
-        controlServer.start(appState: appStateShared)
+        if ProcessInfo.processInfo.arguments.contains("--enable-control-server") {
+            controlServer.start(appState: appStateShared)
+        }
 
         if !SettingsStore.isConfigured() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

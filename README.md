@@ -48,6 +48,7 @@ On first launch, the app will request **microphone access** (required for record
 swift test --package-path src
 bash tests/e2e.sh
 bash tests/live_audio.sh  # signed app + granted microphone permission required
+bash tests/offline_bridge.sh
 ```
 
 ## License

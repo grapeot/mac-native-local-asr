@@ -25,7 +25,10 @@ trap cleanup EXIT
 
 if ! curl --max-time 2 -sf "http://127.0.0.1:$PORT/status" >/dev/null 2>&1; then
     [ -d "$APP_PATH" ] || fail "App bundle not found at $APP_PATH; run scripts/build_app.sh first"
-    open "$APP_PATH"
+    if pgrep -f "$APP_PATH/Contents/MacOS/MacLocalASR" >/dev/null 2>&1; then
+        fail "App is already running without the control-server flag; quit it and retry"
+    fi
+    open "$APP_PATH" --args --enable-control-server
     STARTED_APP=1
     for _ in $(seq 1 30); do
         APP_PID=$(pgrep -n -f "$APP_PATH/Contents/MacOS/MacLocalASR" || true)

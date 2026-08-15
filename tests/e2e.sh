@@ -11,6 +11,9 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TEST_AUDIO="/tmp/maclocalasr_test.wav"
 
 cleanup() {
+    if [ -n "${GATE_PID:-}" ]; then
+        kill "$GATE_PID" 2>/dev/null || true
+    fi
     if [ -n "${APP_PID:-}" ]; then
         kill "$APP_PID" 2>/dev/null || true
     fi
@@ -31,7 +34,20 @@ if lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
     exit 1
 fi
 
-"$REPO_ROOT/src/.build/debug/MacLocalASR" 2>/tmp/maclocalasr_e2e_stderr.log &
+"$REPO_ROOT/src/.build/debug/MacLocalASR" 2>/tmp/maclocalasr_gate_stderr.log &
+GATE_PID=$!
+sleep 2
+if curl --max-time 1 -sf http://127.0.0.1:$PORT/status >/dev/null 2>&1; then
+    echo "ControlServer started without --enable-control-server"
+    kill "$GATE_PID" 2>/dev/null || true
+    exit 1
+fi
+kill "$GATE_PID" 2>/dev/null || true
+wait "$GATE_PID" 2>/dev/null || true
+GATE_PID=""
+sleep 2
+
+"$REPO_ROOT/src/.build/debug/MacLocalASR" --enable-control-server 2>/tmp/maclocalasr_e2e_stderr.log &
 APP_PID=$!
 echo "App PID: $APP_PID"
 sleep 4
@@ -55,15 +71,20 @@ if echo "$STATUS" | grep -q '"configured":false'; then
 fi
 
 echo "=== 6. Verify bridge ready ==="
-STATUS=$(curl --max-time 5 -sf http://127.0.0.1:$PORT/status)
-echo "$STATUS"
+for i in $(seq 1 120); do
+    STATUS=$(curl --max-time 5 -sf http://127.0.0.1:$PORT/status)
+    echo "[$i s] $STATUS"
+    echo "$STATUS" | grep -q '"ready":true' && break
+    echo "$STATUS" | grep -q '"phase":"error:' && { echo "Bridge startup failed"; exit 1; }
+    sleep 1
+done
 echo "$STATUS" | grep -q '"ready":true' || { echo "Bridge not ready"; exit 1; }
 
 echo "=== 7. Test transcription via direct bridge call ==="
 # Direct test: send the test WAV to the bridge process
 VENV_PYTHON="$HOME/.maclocalasr/.venv/bin/python"
 BRIDGE="$HOME/.maclocalasr/start_asr_bridge.py"
-BRIDGE_OUTPUT=$("$VENV_PYTHON" "$BRIDGE" --model "Qwen/Qwen3-ASR-1.7B" 2>/tmp/maclocalasr_bridge_stderr.log <<EOF
+BRIDGE_OUTPUT=$("$VENV_PYTHON" "$BRIDGE" --model "Qwen/Qwen3-ASR-1.7B" --local-files-only 2>/tmp/maclocalasr_bridge_stderr.log <<EOF
 {"type": "start"}
 {"type": "transcribe", "audio_path": "$TEST_AUDIO"}
 {"type": "stop"}

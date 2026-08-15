@@ -132,8 +132,10 @@ final class ControlServer: @unchecked Sendable {
 
             let response = handleRequest(path)
 
-            let httpResponse = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(response.count)\r\nConnection: close\r\n\r\n\(response)"
-            let data = httpResponse.data(using: .utf8) ?? Data()
+            let responseData = response.data(using: .utf8) ?? Data()
+            let header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(responseData.count)\r\nConnection: close\r\n\r\n"
+            var data = header.data(using: .utf8) ?? Data()
+            data.append(responseData)
             _ = data.withUnsafeBytes { buf -> Int in
                 send(client, buf.baseAddress, data.count, 0)
             }
@@ -145,9 +147,14 @@ final class ControlServer: @unchecked Sendable {
         switch path {
         case "/status":
             let snap = getSnapshot()
-            let t = snap.lastTranscript.replacingOccurrences(of: "\"", with: "\\\"")
-            let sp = snap.setupProgress.replacingOccurrences(of: "\"", with: "\\\"")
-            return "{\"phase\":\"\(snap.phase)\",\"configured\":\(snap.configured),\"ready\":\(snap.ready),\"audioLevel\":\(snap.audioLevel),\"lastTranscript\":\"\(t)\",\"setupProgress\":\"\(sp)\"}"
+            return encodeJSON([
+                "phase": snap.phase,
+                "configured": snap.configured,
+                "ready": snap.ready,
+                "audioLevel": snap.audioLevel,
+                "lastTranscript": snap.lastTranscript,
+                "setupProgress": snap.setupProgress,
+            ])
 
         case "/setup":
             let state = self.appState
@@ -180,5 +187,12 @@ final class ControlServer: @unchecked Sendable {
         default:
             return "{\"error\":\"unknown\",\"paths\":[\"/status\",\"/setup\",\"/toggle\",\"/settings\"]}"
         }
+    }
+
+    private func encodeJSON(_ object: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else {
+            return "{\"error\":\"serialization_failed\"}"
+        }
+        return String(decoding: data, as: UTF8.self)
     }
 }

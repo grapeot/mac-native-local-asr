@@ -11,7 +11,7 @@ Power users who want voice dictation on macOS without depending on cloud service
 ## Goals
 
 1. Press a global hotkey anywhere on macOS → speak → text is copied to clipboard, ready to paste with ⌘V
-2. Works 100% offline with no network calls
+2. After first-time setup, starts and transcribes offline with no network calls
 3. Uses Qwen3-ASR-1.7B via MLX for high-quality Chinese/English/mixed recognition
 4. Low latency: under 2 seconds from stop-speaking to text-copied
 5. Battery-aware: model stays resident but inference is fast enough to not drain battery
@@ -37,7 +37,7 @@ Power users who want voice dictation on macOS without depending on cloud service
 - [ ] First-run setup is self-contained: user clicks "Setup", app auto-creates venv, installs mlx-qwen3-asr, starts bridge — no path entry
 - [ ] Settings window is resizable and shows hotkey recorder, input device picker, and setup status
 - [ ] Bilingual UI (English/Chinese) following system locale
-- [ ] App is testable end-to-end from command line via HTTP control server (localhost:17844) without GUI interaction
+- [ ] App is testable end-to-end with the opt-in `--enable-control-server` flag; normal launches expose no HTTP server
 
 ## Constraints
 

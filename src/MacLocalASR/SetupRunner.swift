@@ -5,6 +5,7 @@ enum SetupRunner {
     static let installDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".maclocalasr")
     static let venvPython = installDir.appendingPathComponent(".venv/bin/python")
     static let bridgeScript = installDir.appendingPathComponent("start_asr_bridge.py")
+    static let mlxQwen3ASRVersion = "0.3.5"
 
     // Bridge script embedded as a string — written to disk during setup.
     // This eliminates any "file not found" dependency on the repo layout.
@@ -28,13 +29,26 @@ def main() -> int:
         print(json.dumps({"type": "error", "message": "mlx-qwen3-asr not installed"}), flush=True)
         return 2
 
-    model_loaded = {"v": False}
+    resolved_model_path = {"v": None}
+
+    def resolve_model_path() -> str:
+        local = Path(args.model)
+        if local.is_dir() and (local / "config.json").is_file():
+            return str(local)
+        from huggingface_hub import snapshot_download
+        return snapshot_download(
+            repo_id=args.model,
+            allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"],
+            local_files_only=args.local_files_only,
+        )
+
     def ensure_model():
-        if model_loaded["v"]:
+        if resolved_model_path["v"]:
             return None
         try:
-            load_model(args.model)
-            model_loaded["v"] = True
+            model_path = resolve_model_path()
+            load_model(model_path)
+            resolved_model_path["v"] = model_path
             return None
         except Exception as e:
             return str(e)
@@ -61,7 +75,7 @@ def main() -> int:
                 print(json.dumps({"type": "error", "message": f"Audio not found: {ap}"}), flush=True)
                 continue
             try:
-                r = transcribe(ap, model=args.model, verbose=False, return_timestamps=False, return_chunks=True)
+                r = transcribe(ap, model=resolved_model_path["v"], verbose=False, return_timestamps=False, return_chunks=True)
                 chunks = r.chunks or []
                 text = " ".join((c.get("text") or "").strip() for c in chunks).strip()
                 if not text:
@@ -81,8 +95,11 @@ if __name__ == "__main__":
 """#
 
     static func isSetupComplete() -> Bool {
-        FileManager.default.isExecutableFile(atPath: venvPython.path)
-            && FileManager.default.fileExists(atPath: bridgeScript.path)
+        guard FileManager.default.isExecutableFile(atPath: venvPython.path),
+              let installedBridge = try? String(contentsOf: bridgeScript, encoding: .utf8) else {
+            return false
+        }
+        return installedBridge == bridgeScriptContent
     }
 
     static func runSetup(progress: @escaping @MainActor (String) -> Void) async -> Bool {
@@ -106,10 +123,12 @@ if __name__ == "__main__":
             }
         }
 
-        // Step 3: Install mlx-qwen3-asr
+        // Step 3: Install the tested mlx-qwen3-asr version
         await MainActor.run { progress("Installing mlx-qwen3-asr (this may take a minute)…") }
         _ = await runProcess(venvPython.path, args: ["-m", "pip", "install", "--upgrade", "pip", "--quiet"])
-        let installResult = await runProcess(venvPython.path, args: ["-m", "pip", "install", "mlx-qwen3-asr", "--quiet"])
+        let installResult = await runProcess(venvPython.path, args: [
+            "-m", "pip", "install", "mlx-qwen3-asr==\(mlxQwen3ASRVersion)", "--quiet"
+        ])
         if !installResult.success {
             await MainActor.run { progress("Error installing mlx-qwen3-asr: \(installResult.stderr)") }
             return false
@@ -122,7 +141,25 @@ if __name__ == "__main__":
             return false
         }
 
-        // Step 5: Write bridge script from embedded content
+        // Step 5: Download the model while setup is explicitly online.
+        await MainActor.run { progress("Downloading Qwen3-ASR-1.7B for offline use…") }
+        let downloadScript = """
+        import sys
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=sys.argv[1],
+            allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model"],
+        )
+        """
+        let downloadResult = await runProcess(venvPython.path, args: [
+            "-c", downloadScript, SettingsStore.defaultModelId
+        ])
+        if !downloadResult.success {
+            await MainActor.run { progress("Error downloading model: \(downloadResult.stderr)") }
+            return false
+        }
+
+        // Step 6: Write bridge script from embedded content
         await MainActor.run { progress("Installing bridge script…") }
         try? FileManager.default.removeItem(at: bridgeScript)
         do {

@@ -48,6 +48,14 @@
   tightened `tests/e2e.sh` to assert actual fixture transcription output.
 - Removed the unused Python `sounddevice` recording branch and its extra
   dependencies; Swift is the single audio-capture owner and Python only transcribes.
+- Gated ControlServer behind `--enable-control-server`; production launches no
+  longer expose recording controls or transcript state on localhost.
+- Pinned `mlx-qwen3-asr==0.3.5`, moved model download into first-time Setup, and
+  made runtime model resolution enforce `local_files_only` before loading.
+- Removed generated Xcode user state, obsolete standalone setup/bridge scripts,
+  and superseded review snapshots; added the repository's MIT license.
+- Fixed ControlServer UTF-8 `Content-Length` calculation and JSON escaping after
+  the first-run Chinese status exposed a truncated HTTP response.
 
 ## Lessons Learned
 
